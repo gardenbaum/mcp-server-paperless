@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
+    PermissionDenied,
     UpstreamTimeout,
     UpstreamUnavailable,
     UpstreamUnreachable,
@@ -58,7 +59,7 @@ from mcp_server_paperless.domain.urls import text_without_credentials
 from mcp_server_paperless.paperless.pagination import MAX_ITEMS, Page, collect
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from mcp_server_paperless.paperless.client import PaperlessClient
 
@@ -187,6 +188,17 @@ def unseen_processed(mail_id: int) -> NotFound:
     """The error for a processed mail that does not exist or that the user may not see."""
     message = f"No processed mail {mail_id} exists that this user may see."
     return NotFound(message, hint="Call list_processed_mail to see the records you can use.")
+
+
+def undeletable_processed() -> PermissionDenied:
+    """The error for records of which the user may not delete one."""
+    return PermissionDenied(
+        "Paperless does not let you delete these records. Nothing was deleted.",
+        hint=(
+            "It takes the permission delete_processedmail, and records that you own or that have "
+            "no owner; one other record refuses all of them."
+        ),
+    )
 
 
 def beyond_last_page(page: int) -> NotFound:
@@ -471,6 +483,15 @@ class PaperlessMailWriter:
             _ = await self._client.request("DELETE", f"{ACCOUNTS}{account_id}/", retry=False)
         except NotFound:
             raise unseen_account(account_id) from None
+
+    async def delete_processed_mail(self, mail_ids: Sequence[int]) -> None:
+        """See ``MailWriter.delete_processed_mail``."""
+        try:
+            _ = await self._client.request(
+                "POST", f"{PROCESSED}bulk_delete/", json={"mail_ids": list(mail_ids)}, retry=False
+            )
+        except PermissionDenied:
+            raise undeletable_processed() from None
 
     async def _saved(self, account_id: int) -> dict[str, object]:
         """The saved account as a request body that keeps its password (the schema needs one)."""

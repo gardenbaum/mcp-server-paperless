@@ -15,6 +15,7 @@ from pydantic import Field
 
 from mcp_server_paperless.domain.documents import DocumentSearchResult, NameOrId
 from mcp_server_paperless.domain.views import (
+    DisplayMode,
     RuleInput,
     SavedViewInfo,
     SavedViewListing,
@@ -52,6 +53,21 @@ type SortField = Annotated[
 ]
 type PageSize = Annotated[
     int | None, Field(ge=1, description="The page size the Paperless web UI uses for the view.")
+]
+type Icon = Annotated[
+    str | None,
+    Field(description="Icon name, e.g. inbox, receipt, people; a wrong one lists them all."),
+]
+type Mode = Annotated[DisplayMode | None, Field(description="How the web UI shows the view.")]
+type Fields = Annotated[
+    list[str] | None,
+    Field(
+        description=(
+            "Fields the web UI shows of each document, in order: title, created, added, tag, "
+            "correspondent, documenttype, storagepath, note, owner, shared, asn, pagecount, "
+            "custom_field_<id>."
+        )
+    ),
 ]
 
 RULE_REFERENCE = """\
@@ -120,7 +136,7 @@ async def list_saved_views(ctx: Context) -> SavedViewListing:
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["get_saved_view"])
 @boundary
 async def get_saved_view(ctx: Context, view: View) -> SavedViewInfo:
-    """Read one saved view with its filter rules, sort order and page size.
+    """Read one saved view with its filter rules, sort order and display settings.
 
     The view matches by exact name, then ignoring case and accents, or by id; an unknown or
     ambiguous name is an error that lists the closest names or candidates.
@@ -140,6 +156,9 @@ async def create_saved_view(  # noqa: PLR0913 -- one parameter per setting of a 
     sort_field: SortField = None,
     sort_reverse: Annotated[bool, Field(description="Sort descending.")] = False,
     page_size: PageSize = None,
+    icon: Icon = None,
+    display_mode: Mode = None,
+    display_fields: Fields = None,
 ) -> SavedViewInfo:
     """Create a saved view (the description is CREATE_DESCRIPTION)."""
     spec = ViewCreate(
@@ -148,6 +167,9 @@ async def create_saved_view(  # noqa: PLR0913 -- one parameter per setting of a 
         sort_field=sort_field,
         sort_reverse=sort_reverse,
         page_size=page_size,
+        icon=icon,
+        display_mode=display_mode,
+        display_fields=None if display_fields is None else tuple(display_fields),
     )
     return await services(ctx).views.create(spec)
 
@@ -165,8 +187,17 @@ async def update_saved_view(  # noqa: PLR0913 -- one parameter per setting of a 
     sort_field: SortField = None,
     sort_reverse: Annotated[bool | None, Field(description="Sort descending or not.")] = None,
     page_size: PageSize = None,
+    icon: Icon = None,
+    display_mode: Mode = None,
+    display_fields: Fields = None,
     clear_sort: Annotated[bool, Field(description="Remove the sort field.")] = False,
     clear_page_size: Annotated[bool, Field(description="Remove the page size.")] = False,
+    clear_display_mode: Annotated[
+        bool, Field(description="Back to the web UI's default display mode.")
+    ] = False,
+    clear_display_fields: Annotated[
+        bool, Field(description="Back to the web UI's default fields.")
+    ] = False,
 ) -> SavedViewInfo:
     """Change a saved view (the description is UPDATE_DESCRIPTION)."""
     edit = ViewEdit(
@@ -177,6 +208,11 @@ async def update_saved_view(  # noqa: PLR0913 -- one parameter per setting of a 
         page_size=page_size,
         clear_sort=clear_sort,
         clear_page_size=clear_page_size,
+        icon=icon,
+        display_mode=display_mode,
+        display_fields=None if display_fields is None else tuple(display_fields),
+        clear_display_mode=clear_display_mode,
+        clear_display_fields=clear_display_fields,
     )
     return await services(ctx).views.update(view, edit)
 

@@ -430,6 +430,44 @@ async def test_other_settings_of_a_token_account_are_sent_without_the_token(
     assert server.sent == [("PATCH", "/api/mail_accounts/1/", {"username": "me@example.com"}, {})]
 
 
+@pytest.mark.decision("decision-83")
+async def test_records_are_deleted_by_one_request_whose_echo_is_not_read(
+    make_client: ClientFactory,
+) -> None:
+    """Paperless lists every id it was sent as deleted, also one that does not exist."""
+    server = Recording(ok({"result": "OK", "deleted_mail_ids": [9, 10]}))
+
+    assert await PaperlessMailWriter(make_client(server)).delete_processed_mail([9, 10]) is None
+    assert server.sent == [("POST", "/api/processed_mail/bulk_delete/", {"mail_ids": [9, 10]}, {})]
+
+
+@pytest.mark.decision("decision-83")
+@pytest.mark.parametrize("status", [429, 500, 503])
+async def test_deleting_records_is_never_repeated(make_client: ClientFactory, status: int) -> None:
+    server = Recording(httpx2.Response(status, json={"detail": "no"}))
+
+    with pytest.raises(UpstreamUnavailable):
+        await PaperlessMailWriter(make_client(server)).delete_processed_mail([9])
+
+    assert len(server.sent) == 1
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_refused_deletion_says_that_nothing_was_deleted(
+    make_client: ClientFactory,
+) -> None:
+    server = Recording(httpx2.Response(403, text="Insufficient permissions"))
+
+    with pytest.raises(PermissionDenied) as raised:
+        await PaperlessMailWriter(make_client(server)).delete_processed_mail([9])
+
+    assert raised.value.describe() == (
+        "Paperless does not let you delete these records. Nothing was deleted. "
+        "Hint: It takes the permission delete_processedmail, and records that you own or that "
+        "have no owner; one other record refuses all of them."
+    )
+
+
 async def test_a_page_beyond_the_last_one_is_not_found(make_client: ClientFactory) -> None:
     server = Recording(httpx2.Response(404, json={"detail": "Invalid page."}))
 

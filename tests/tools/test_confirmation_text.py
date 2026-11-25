@@ -122,6 +122,8 @@ def hostile(evil: str = EVIL) -> FakeState:
     rule.name = rule.folder = evil
     rule.filter_from = rule.filter_subject = rule.action_parameter = evil
     rule.action = "move"
+    [mail] = state.processed_mail
+    mail.subject = mail.folder = mail.status = mail.error = evil
     settings: dict[str, JsonValue] = {
         "email": {"to": f"a@{PLACE},b@{PLACE}", "subject": evil, "body": evil},
         "webhook": {"url": f"https://{PLACE}/{evil}", "params": evil},
