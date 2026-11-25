@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T14:53:39Z'
-updated_date: '2026-11-25T15:10:32Z'
+updated_date: '2026-11-25T15:49:37Z'
 labels:
   - testing
 dependencies: []
@@ -66,3 +66,13 @@ The code of PLMCP-79, 80, 81, 87 and 88 is merged, but these tasks stay open bec
 <!-- SECTION:PLAN:BEGIN -->
 One PR per area, one at a time, each from main: 79 (AC 1-3), 80 (4-6), 81 (7-13), 87 (14-22), 88 (23-29). Failing steps and other people's changes are made by a port wrapper (constructor seam) that acts on the same Paperless just before a named call: the same assertions on the fake and 3.5.1. Every PR: hand mutants on an archive copy, full hosted E2E, ticks after the live run.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner, 2026-11-26, verbatim: "überall wie von dir empfohlen" (translation: "everywhere as you recommend"). Question (a): does "refetch" at contract and tool level count as proven by what the tools say is fetched again and by the record going, the real refetch being proven in E2E with the IMAP server, since neither the fake nor the contract stack has a mail server? Recommended and decided: yes, with this note.
+
+Owner, 2026-11-26, verbatim: "überall wie von dir empfohlen" (translation: "everywhere as you recommend"). Question (b): does a 429 from a transport in front of the real Paperless count as "against 3.5.1", since 3.5.1 throttles only its sign-in? Recommended and decided: yes, with this note.
+
+The owner's answer above was given to and relayed by the main agent; the quote is as relayed.
+<!-- SECTION:NOTES:END -->
