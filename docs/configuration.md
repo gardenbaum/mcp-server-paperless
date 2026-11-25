@@ -339,9 +339,9 @@ users or groups needs the `view_user` or `view_group` permission in Paperless.
 Off by default. Manages the mail import: `list_mail_accounts`, `get_mail_account`,
 `create_mail_account`, `update_mail_account`, `delete_mail_account`, `test_mail_account`,
 `process_mail_account`, `list_mail_rules`, `get_mail_rule`, `create_mail_rule`,
-`update_mail_rule`, `delete_mail_rule`, `list_processed_mail` (compact rows),
-`delete_processed_mail` and `get_processed_mail` (one mail with its whole error, in parts of 20,000 characters, and whether it
-would be fetched again without its record).
+`update_mail_rule`, `delete_mail_rule`, `list_processed_mail` (compact rows), `get_processed_mail`
+(one mail with its whole error, in parts of 20,000 characters, and whether it would be fetched again
+without its record) and `delete_processed_mail`.
 
 - Passwords are write-only: they are accepted when an account is created or changed and are
   never returned, quoted or logged, nor is any OAuth token. Gmail and Outlook accounts are set up
