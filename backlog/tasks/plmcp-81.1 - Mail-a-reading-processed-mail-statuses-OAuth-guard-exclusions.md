@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:53Z'
-updated_date: '2026-11-24T23:03:30Z'
+updated_date: '2026-11-25T07:15:18Z'
 labels:
   - mail
 dependencies: []
@@ -50,4 +50,6 @@ First part of PLMCP-81: one processed mail and its full error cannot be read, th
 <!-- SECTION:NOTES:BEGIN -->
 Owner approval (2026-11-24): designs 81, 87, 88, 89, 90, 83, 100 all as recommended; here decisions 1, 2a, 3a, 4a (exclusions on POST), 5a, 6a, 10, 12.
 Login answers (decision-80) are hidden to the end of a text, and the undated head of a log in full, after an automated security review found that an answer can forge the end of its error and that a cut head hid nothing (main agent, 2026-11-24: fail closed, tests first). Order differs from the design: answers before URLs, because a URL before could swallow where the answer starts.
+
+Owner's words (2026-11-24): 'Alle wie empfohlen' in the question 'Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?'. Coverage rows and decisions 79 and 80 quote exactly that now.
 <!-- SECTION:NOTES:END -->
