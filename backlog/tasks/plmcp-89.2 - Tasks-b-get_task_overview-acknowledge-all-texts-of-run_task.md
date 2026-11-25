@@ -1,10 +1,11 @@
 ---
 id: PLMCP-89.2
 title: 'Tasks b: get_task_overview, acknowledge all, texts of run_task'
-status: To Do
+status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:39Z'
+updated_date: '2026-11-25T14:48:51Z'
 labels:
   - admin
 dependencies:
@@ -32,8 +33,24 @@ Second part of PLMCP-89: how many tasks need attention, what runs now and how ea
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Red: adapter, contract, service, tool and E2E for count_tasks, list_active_tasks, summarize_tasks, get_viewer, acknowledge_all_tasks, overview, preview, bound yes, lost answer.
+2. Ports, adapter, service, tool get_task_overview, acknowledge_tasks with all; texts of run_task by P4.
+3. decision-94, coverage, exclusions, guide limit +20, docs.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Red first (commit 'red'), then green. 34 hand mutants on a git archive copy: 2 survived; one was a redundant part of the scope (removed), one closed by a test. Deviations: a fourth GET (ui_settings) says whose tasks the summary counts and how many of those to acknowledge are not the user's own; a row of acknowledge by ids sends all=false. Limit: the guide +20 of the approved 89. Not proven: what came in between the second read and the POST on 3.5.1 (only on the fake).
+
+Owner, 2026-11-25, as relayed by the main agent: 'alles wie von dir empfohlen' (everything as you recommend). (1) The sizes of PLMCP-89 are accepted: tasks 21.2 KB, admin 31.2 KB, get_document +283 bytes, core +434 bytes. (2) M2 variant A is built: confirm=true for all_unacknowledged counts only with the preview's expected value. acknowledge_tasks 1,968 to 2,197 bytes (+229 of about 245). Red first at service and tool level (48 red), E2E written before its first hosted run; 14 hand mutants, all killed.
+<!-- SECTION:NOTES:END -->

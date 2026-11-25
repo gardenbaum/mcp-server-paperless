@@ -1,24 +1,38 @@
 """PaperlessTaskListReader and PaperlessTaskListWriter on the Paperless 3.5.1 wire format."""
 
 from datetime import UTC, datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
+import httpx2
 import pytest
 
 from adapter.test_admin import Json, Recording, forbidden, not_found, ok, page
-from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
-from mcp_server_paperless.domain.task_lists import TaskFilters, TaskOrdering, TaskRow
+from mcp_server_paperless.domain.errors import (
+    NotFound,
+    PermissionDenied,
+    UpstreamUnavailable,
+    Validation,
+)
+from mcp_server_paperless.domain.task_lists import (
+    TaskCounts,
+    TaskFilters,
+    TaskOrdering,
+    TaskRow,
+    TaskTypeSummary,
+)
 from mcp_server_paperless.paperless.task_lists import (
     PaperlessTaskListReader,
     PaperlessTaskListWriter,
 )
 
 if TYPE_CHECKING:
-    import httpx2
-
     from adapter.conftest import ClientFactory
 
-pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-93")]
+pytestmark = [
+    pytest.mark.anyio,
+    pytest.mark.decision("decision-93"),
+    pytest.mark.decision("decision-94"),
+]
 
 # The query string of every request as pairs: some names are repeated.
 type Pairs = list[tuple[str, str]]
@@ -162,7 +176,9 @@ async def test_tasks_are_acknowledged_by_id(make_client: ClientFactory) -> None:
     count = await PaperlessTaskListWriter(make_client(server)).acknowledge_tasks([41, 42])
 
     assert count == 2
-    assert server.sent == [("POST", "/api/tasks/acknowledge/", {"tasks": [41, 42]}, {})]
+    assert server.sent == [
+        ("POST", "/api/tasks/acknowledge/", {"tasks": [41, 42], "all": False}, {})
+    ]
 
 
 async def test_acknowledging_unknown_tasks_is_a_validation_error(
@@ -268,38 +284,38 @@ async def test_the_acknowledged_filter_is_sent_as_true_or_false(
 CET = timezone(timedelta(hours=1))
 
 
-@pytest.mark.parametrize(
-    ("filters", "sent"),
-    [
-        (
-            TaskFilters(states=("failure", "revoked")),
-            [("status", "failure"), ("status", "revoked")],
-        ),
-        (
-            TaskFilters(task_types=("mail_fetch", "llm_index")),
-            [("task_type", "mail_fetch"), ("task_type", "llm_index")],
-        ),
-        (
-            TaskFilters(trigger_sources=("web_ui", "email_consume")),
-            [("trigger_source", "web_ui"), ("trigger_source", "email_consume")],
-        ),
-        (TaskFilters(acknowledged=True), [("acknowledged", "true")]),
-        (TaskFilters(is_complete=True), [("is_complete", "true")]),
-        (TaskFilters(is_complete=False), [("is_complete", "false")]),
-        (TaskFilters(owner=7), [("owner", "7")]),
-        (TaskFilters(owner=0), [("owner", "0")]),
-        (TaskFilters(name="a b&c+d"), [("name", "a b&c+d")]),
-        (TaskFilters(result="50%"), [("result", "50%")]),
-        (
-            TaskFilters(created_from=datetime(2026, 11, 1, 8, tzinfo=CET)),
-            [("date_created_after", "2026-11-01T08:00:00+01:00")],
-        ),
-        (
-            TaskFilters(created_to=datetime(2026, 11, 2, tzinfo=UTC)),
-            [("date_created_before", "2026-11-02T00:00:00+00:00")],
-        ),
-    ],
-)
+FILTERS: list[tuple[TaskFilters, Pairs]] = [
+    (
+        TaskFilters(states=("failure", "revoked")),
+        [("status", "failure"), ("status", "revoked")],
+    ),
+    (
+        TaskFilters(task_types=("mail_fetch", "llm_index")),
+        [("task_type", "mail_fetch"), ("task_type", "llm_index")],
+    ),
+    (
+        TaskFilters(trigger_sources=("web_ui", "email_consume")),
+        [("trigger_source", "web_ui"), ("trigger_source", "email_consume")],
+    ),
+    (TaskFilters(acknowledged=True), [("acknowledged", "true")]),
+    (TaskFilters(is_complete=True), [("is_complete", "true")]),
+    (TaskFilters(is_complete=False), [("is_complete", "false")]),
+    (TaskFilters(owner=7), [("owner", "7")]),
+    (TaskFilters(owner=0), [("owner", "0")]),
+    (TaskFilters(name="a b&c+d"), [("name", "a b&c+d")]),
+    (TaskFilters(result="50%"), [("result", "50%")]),
+    (
+        TaskFilters(created_from=datetime(2026, 11, 1, 8, tzinfo=CET)),
+        [("date_created_after", "2026-11-01T08:00:00+01:00")],
+    ),
+    (
+        TaskFilters(created_to=datetime(2026, 11, 2, tzinfo=UTC)),
+        [("date_created_before", "2026-11-02T00:00:00+00:00")],
+    ),
+]
+
+
+@pytest.mark.parametrize(("filters", "sent"), FILTERS)
 async def test_every_filter_is_sent_under_the_name_paperless_has(
     make_client: ClientFactory, filters: TaskFilters, sent: Pairs
 ) -> None:
@@ -372,3 +388,147 @@ async def test_a_task_without_a_file_has_no_file_name(
 
     [row] = found.rows
     assert (row.file_name, row.owner, row.wait_time_seconds) == (None, None, None)
+
+
+# --- counts, running tasks and the summary (PLMCP-89.2)
+
+
+class Answers(Queries):
+    """Answers every request with one body and records its path and query."""
+
+    def __init__(self, body: object) -> None:
+        super().__init__()
+        self.body: object = body
+        self.paths: list[str] = []
+
+    @override
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        _ = super().__call__(request)
+        self.paths.append(request.url.path)
+        return ok(self.body)
+
+
+async def test_the_counts_take_the_filters_of_the_list(make_client: ClientFactory) -> None:
+    server = Answers({"all": 9, "needs_attention": 3, "in_progress": 2, "completed": 4})
+    filters = TaskFilters(
+        task_types=("mail_fetch", "llm_index"), acknowledged=False, owner=2, name="x"
+    )
+
+    found = await PaperlessTaskListReader(make_client(server)).count_tasks(filters)
+
+    assert found == TaskCounts(total=9, needs_attention=3, in_progress=2, completed=4)
+    assert server.paths == ["/api/tasks/status_counts/"]
+    assert server.sent == [
+        [
+            ("task_type", "mail_fetch"),
+            ("task_type", "llm_index"),
+            ("acknowledged", "false"),
+            ("owner", "2"),
+            ("name", "x"),
+        ]
+    ]
+
+
+@pytest.mark.parametrize(
+    ("filters", "sent"), [(f, s) for f, s in FILTERS if not f.states and f.is_complete is None]
+)
+async def test_every_filter_of_the_counts_is_sent_under_its_name(
+    make_client: ClientFactory, filters: TaskFilters, sent: Pairs
+) -> None:
+    server = Answers({"all": 0, "needs_attention": 0, "in_progress": 0, "completed": 0})
+
+    _ = await PaperlessTaskListReader(make_client(server)).count_tasks(filters)
+
+    assert server.sent == [sent]
+
+
+async def test_the_running_tasks_are_rows_like_those_of_the_list(
+    make_client: ClientFactory,
+) -> None:
+    server = Answers([TASK_WIRE])
+
+    assert await PaperlessTaskListReader(make_client(server)).list_active_tasks() == (TASK,)
+    assert (server.paths, server.sent) == (["/api/tasks/active/"], [[]])
+
+
+async def test_the_summary_is_read_for_the_days_asked_for(make_client: ClientFactory) -> None:
+    wire = {
+        "task_type": "mail_fetch",
+        "total_count": 7,
+        "pending_count": 1,
+        "success_count": 4,
+        "failure_count": 2,
+        "avg_duration_seconds": 1.5,
+        "avg_wait_time_seconds": None,
+        "last_run": "2026-11-17T08:00:00Z",
+        "last_success": None,
+        "last_failure": "2026-11-17T08:00:01Z",
+    }
+    server = Answers([wire])
+
+    [found] = await PaperlessTaskListReader(make_client(server)).summarize_tasks(days=7)
+
+    assert found == TaskTypeSummary(
+        task_type="mail_fetch",
+        total=7,
+        pending=1,
+        success=4,
+        failure=2,
+        avg_duration_seconds=1.5,
+        avg_wait_time_seconds=None,
+        last_run=datetime(2026, 11, 17, 8, tzinfo=UTC),
+        last_success=None,
+        last_failure=datetime(2026, 11, 17, 8, 0, 1, tzinfo=UTC),
+    )
+    assert (server.paths, server.sent) == (["/api/tasks/summary/"], [[("days", "7")]])
+
+
+@pytest.mark.parametrize(
+    ("user", "permissions", "viewer"),
+    [
+        ({"is_staff": True, "is_superuser": False}, [], (True, True)),
+        ({"is_staff": False, "is_superuser": True}, [], (False, True)),
+        ({"is_staff": False, "is_superuser": False}, ["view_system_monitoring"], (False, True)),
+        ({"is_staff": False, "is_superuser": False}, ["view_paperlesstask"], (False, False)),
+    ],
+)
+async def test_the_viewer_is_read_from_the_ui_settings(
+    make_client: ClientFactory, user: Json, permissions: list[str], viewer: tuple[bool, bool]
+) -> None:
+    body = {"user": {"id": 5, "username": "u", **user}, "settings": {}, "permissions": permissions}
+    server = Answers(body)
+
+    found = await PaperlessTaskListReader(make_client(server)).get_viewer()
+
+    assert (found.id, found.sees_all, found.summary_of_all) == (5, *viewer)
+    assert server.paths == ["/api/ui_settings/"]
+
+
+async def test_the_aggregates_without_the_permission_say_what_is_needed(
+    make_client: ClientFactory,
+) -> None:
+    reader = PaperlessTaskListReader(make_client(Recording(forbidden(), forbidden(), forbidden())))
+
+    for call in (
+        reader.count_tasks(TaskFilters()),
+        reader.list_active_tasks(),
+        reader.summarize_tasks(days=1),
+    ):
+        with pytest.raises(PermissionDenied) as raised:
+            _ = await call
+        assert raised.value.hint
+        assert "view_paperlesstask" in raised.value.hint
+
+
+async def test_all_tasks_are_acknowledged_in_one_request_that_is_not_retried(
+    make_client: ClientFactory,
+) -> None:
+    server = Recording(ok({"result": 12}))
+
+    assert await PaperlessTaskListWriter(make_client(server)).acknowledge_all_tasks() == 12
+    assert server.sent == [("POST", "/api/tasks/acknowledge/", {"all": True}, {})]
+
+    lost = Recording(httpx2.Response(503), ok({"result": 0}))
+    with pytest.raises(UpstreamUnavailable):
+        _ = await PaperlessTaskListWriter(make_client(lost)).acknowledge_all_tasks()
+    assert len(lost.sent) == 1

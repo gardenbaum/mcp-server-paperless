@@ -2,7 +2,7 @@
 
 <!-- Generated from the tool surface by `just docs-tools`. Do not edit by hand. -->
 
-106 tools in 14 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
+107 tools in 14 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
 default; the others are switched on with
 [`PAPERLESS_MCP_TOOLSETS`](configuration.md#toolsets), which also says what each toolset is for.
 
@@ -140,7 +140,8 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | Tool | Kind | What it does |
 |---|---|---|
 | `list_tasks` | read | List background tasks, newest first: uploads, mail fetches, sanity checks, training. |
-| `acknowledge_tasks` | write | Mark tasks as seen, e.g. failed ones after you looked at them. |
+| `get_task_overview` | read | How the background tasks stand: how many need attention, what runs, each type's record. |
+| `acknowledge_tasks` | write, confirm, dry run | Mark tasks as seen, e.g. failed ones after you looked at them. |
 | `run_task` | write, confirm | Start a background task by hand and return its task_id; follow it with get_task. |
 
 ## `trash`

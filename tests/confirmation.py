@@ -8,7 +8,7 @@ import base64
 from typing import TYPE_CHECKING, Final
 
 from fakes.mail import FakeMailAccount, FakeMailRule, FakeProcessedMail
-from fakes.paperless import FakeDocument, FakeFile, FakePaperless, FakeState, seeded
+from fakes.paperless import FakeDocument, FakeFile, FakePaperless, FakeState, FakeTask, seeded
 from fakes.sharing import FakeShareBundle, FakeShareLink
 from fastmcp.client.elicitation import ElicitResult
 
@@ -23,6 +23,13 @@ type Json = dict[str, object]
 type Handler = Callable[[str, object, object, object], Awaitable[ElicitResult[object]]]
 
 NOTE: Final[Json] = {"document_id": 1, "note_id": 1}
+# The end of the refusal of a tool whose hint is not the usual one, on `world()`.
+HINTS: Final[dict[str, str]] = {
+    "acknowledge_tasks": (
+        " Hint: Describe the effect to the user and call the tool again with the same arguments, "
+        "confirm=true and expected=1-1-0-0-1 only once they agree."
+    ),
+}
 YES: Final[dict[str, bool]] = {"confirm": True}
 NOT_AGAIN: Final = "Do not call the tool again on your own; ask the user what they want."
 KNOWN: Final = b"%PDF-1.4 a file Paperless holds"
@@ -50,6 +57,7 @@ def world() -> FakeState:
             b"%PDF-1.4", None, "text", "application/pdf"
         )
     state.trash = [FakeDocument(id=30, title="Old")]
+    state.tasks = [FakeTask(id=1, task_id="u1", status="failure", file_name="Scan.pdf", owner=2)]
     state.documents.append(FakeDocument(id=13, title="Known", owner=2, original=KNOWN))
     state.documents.append(FakeDocument(id=14, title="Versions", owner=2))
     state.documents.append(FakeDocument(id=15, title="Known copy", owner=2, original=KNOWN))
@@ -170,6 +178,7 @@ CALLS: Final[dict[str, Json]] = {
     "delete_group": {"group": "e2e-group"},
     "update_app_config": {"settings": {"app_title": "Vault"}, "llm_api_key": PASSWORD},
     "run_task": {"task_type": "train_classifier"},
+    "acknowledge_tasks": {"all_unacknowledged": True},
     "create_workflow": {
         "name": "New",
         "enabled": True,

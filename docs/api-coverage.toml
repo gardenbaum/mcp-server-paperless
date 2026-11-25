@@ -58,14 +58,6 @@ operations = [
   "PUT /api/users/{id}/",
 ]
 
-[[open]]
-task = "PLMCP-89"
-operations = [
-  "GET /api/tasks/active/",
-  "GET /api/tasks/status_counts/",
-  "GET /api/tasks/summary/",
-]
-
 [[undeclared]]
 operation = "GET /api/documents/{id}/"
 params = ["version"]
@@ -89,6 +81,10 @@ params = ["version"]
 [[undeclared]]
 operation = "GET /api/documents/{id}/preview/"
 params = ["version"]
+
+[[undeclared]]
+operation = "GET /api/tasks/status_counts/"
+params = ["acknowledged", "date_created_after", "date_created_before", "name", "owner", "result", "task_type", "trigger_source"]
 
 [[plumbing]]
 operation = "POST /api/mail_accounts/{id}/process/"
@@ -365,11 +361,6 @@ task = "PLMCP-83"
 operation = "POST /api/tags/"
 fields = ["body:owner", "body:set_permissions"]
 task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/tasks/acknowledge/"
-fields = ["body:all"]
-task = "PLMCP-89"
 
 [[open_fields]]
 operation = "POST /api/users/"
@@ -666,3 +657,17 @@ quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-93 - The-task-tools-have-a-toolset-of-their-own-and-show-of-a-tasks-input-only-the-file-name.md"
 reason = "Paperless lists them and answers 400: they cannot be started by hand"
+
+[[exclusion]]
+operation = "GET /api/tasks/active/"
+fields = ["query:acknowledged", "query:date_created_after", "query:date_created_before", "query:is_complete", "query:name", "query:ordering", "query:owner", "query:result", "query:status", "query:task_type", "query:trigger_source"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-94 - Acknowledging-all-tasks-needs-a-yes-after-a-preview-and-the-task-overview-says-what-each-part-counts.md"
+
+[[exclusion]]
+operation = "GET /api/tasks/summary/"
+fields = ["query:acknowledged", "query:date_created_after", "query:date_created_before", "query:is_complete", "query:name", "query:ordering", "query:owner", "query:result", "query:status", "query:task_type", "query:trigger_source"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-94 - Acknowledging-all-tasks-needs-a-yes-after-a-preview-and-the-task-overview-says-what-each-part-counts.md"

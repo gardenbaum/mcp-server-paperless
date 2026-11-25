@@ -462,20 +462,30 @@ attached within the download limit, in parts, or saved (see
 ### `tasks`
 
 Off by default. The background tasks of Paperless: uploads, mail fetches, sanity checks, classifier
-training and the rest. `list_tasks` lists them with every filter Paperless has (state, type, source,
-seen or not, ended or not, owner, file name, result, time) and in any of its orders,
-`acknowledge_tasks` marks them as seen, and `run_task` starts one. `get_task` of `core` follows one
-task by its `task_id`.
+training and the rest. `list_tasks` lists them with every filter Paperless has (state, type,
+source, seen or not, ended or not, owner, file name, result, time) and in any of its orders,
+`get_task_overview` counts them, shows what runs and how each type did, `acknowledge_tasks` marks
+them as seen, and `run_task` starts one. `get_task` of `core` follows one task by its `task_id`.
 
-- These three tools were in `admin` up to version 0.4: an operator who offered `admin` for them
-  adds `tasks` (decision-93). User administration is not needed for them.
+- `list_tasks`, `acknowledge_tasks` and `run_task` were in `admin` up to version 0.4: an operator
+  who offered `admin` for them adds `tasks` (decision-93). User administration is not needed for
+  them.
 - Staff users see every task, others their own and those without an owner. Of what a task was given
   only the file name is shown, not the server path or the metadata of an upload.
 - `name` finds part of the file's name, and also the words for type and source in the language of
   the server's Paperless user.
-- `run_task` needs `confirm` to train the classifier or rebuild the AI index; a sanity check
-  only reads and needs none. It is for superusers; the other tools need the matching Paperless
-  permission.
+- `acknowledge_tasks` with ids needs no `confirm`; with `all_unacknowledged` it does, after saying
+  how many tasks, which newest failures and whose they are, because there is no way back (`dry_run`
+  shows the same). Without a dialog `confirm` counts only together with the `expected` value that
+  preview names, so a task that came in or ended asks again. Tasks that come in while Paperless
+  does it are marked too.
+- In `get_task_overview` the filters apply to the counts only: Paperless offers none for the
+  running tasks and the record by type. The record counts every user's tasks for who may view the
+  system status, and says so.
+- `run_task` starts the three types Paperless starts by hand, one per call. It needs `confirm` to
+  train the classifier or update the AI index (which sends new and changed documents to the
+  embedding service); a sanity check only reads and needs none. It is for superusers; the other
+  tools need the matching Paperless permission.
 
 ### `raw`
 

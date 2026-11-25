@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Literal, cast
 
 import anyio
 import pytest
-from confirmation import CALLS, NOT_AGAIN, NOTE, YES, answering, source, world
+from confirmation import CALLS, HINTS, NOT_AGAIN, NOTE, YES, answering, source, world
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from harness import serve
@@ -284,7 +284,8 @@ async def test_only_an_accepted_dialog_lets_a_tool_run(
     arguments = {**plain, "confirm": confirm}
     kept = files(tmp_path)
     off = server(source(world(), writes=False), tmp_path, required=False)
-    shown = text(await call(off, mode, None, tool, plain)).removesuffix(f" Hint: {CONFIRM_HINT}")
+    hint = HINTS.get(tool, f" Hint: {CONFIRM_HINT}")
+    shown = text(await call(off, mode, None, tool, plain)).removesuffix(hint)
     declined: list[str] = []
     no = await call(
         server(source(world(), writes=False), tmp_path),
