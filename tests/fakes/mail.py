@@ -190,6 +190,7 @@ class MailData:
     hosts: set[str]
     silent_hosts: set[str]
     fetches: list[int] = field(default_factory=list[int])
+    logs: dict[str, list[str]] = field(default_factory=dict[str, list[str]])
 
 
 def denied() -> PermissionDenied:
@@ -464,12 +465,24 @@ def test_account(data: MailData, user: Viewer, account_id: int) -> MailAccountTe
 
 
 def process_account(data: MailData, user: Viewer, account_id: int) -> None:
-    """`MailWriter.process_mail_account` (MailAccountViewSet process): queued, nothing fetched."""
+    """`MailWriter.process_mail_account`: queued; of the fetch only the log lines are written."""
     row = _own_account(data, user, account_id)
     _allow(user, "add", "mailaccount")  # a POST: DRF asks for the add permission
     if not _visible(row.owner, user):
         raise denied()
     data.fetches.append(row.id)
+    start = "[2026-11-25 10:00:00,123] [{}] [{}] "
+    if not any(rule.account == row.id and rule.enabled for rule in data.rules):
+        line = f"No rules enabled for account {row.name}. Skipping."
+        data.logs.setdefault("paperless", []).append(
+            start.format("INFO", "paperless.mail.tasks") + line
+        )
+        return
+    lines = data.logs.setdefault("mail", [])
+    lines.append(start.format("DEBUG", "paperless_mail") + f"Processing mail account {row.name}")
+    if row.imap_server not in data.hosts:
+        refused = f"Error while retrieving mailbox {row.name}: [Errno 111] Connection refused"
+        lines.append(start.format("ERROR", "paperless_mail") + refused)
 
 
 def _exists(kind: str, ids: Collection[int | None], known: frozenset[int]) -> None:

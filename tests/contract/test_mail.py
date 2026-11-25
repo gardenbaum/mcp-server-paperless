@@ -12,6 +12,7 @@ mail is written only by a real mail fetch, so its rows are listed on the fake on
 import uuid
 from typing import TYPE_CHECKING
 
+import anyio
 import pytest
 from pydantic import SecretStr
 
@@ -20,11 +21,14 @@ from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Valid
 from mcp_server_paperless.domain.mail import (
     MailAccount,
     MailAccountValues,
+    MailFacts,
     MailRule,
     MailRuleValues,
     ProcessedMail,
 )
 from mcp_server_paperless.paperless.mail import unreachable_server
+from mcp_server_paperless.services.log_records import read_log_records
+from mcp_server_paperless.services.mail_log_lines import about_mail, about_run
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -225,6 +229,32 @@ async def test_a_deleted_account_takes_its_rules_with_it(backend: Backend, mail:
         _ = await backend.admin.mail.get_mail_rule(rule.id)
     with pytest.raises(NotFound):
         await backend.admin.mail_writes.delete_mail_account(made.id)
+
+
+@pytest.mark.decision("decision-90")
+@pytest.mark.contract(PROCESS_ACCOUNT)
+async def test_the_log_lines_of_a_fetch_have_the_known_forms(backend: Backend, mail: Mail) -> None:
+    idle, refused = await mail.account(), await mail.account()
+    _ = await mail.rule(refused.id)
+    nothing = MailFacts()
+    told: set[str] = set()
+
+    for _ in range(60):  # another fetch can make one skip, so it is asked for again
+        for account in (idle, refused):
+            await backend.admin.mail_writes.process_mail_account(account.id)
+        runs = await read_log_records(backend.admin.management, "paperless")
+        told |= {r.message for r in runs if about_run(r, idle.name)}
+        mails = await read_log_records(backend.admin.management, "mail")
+        told |= {r.message[:40] for r in mails if about_mail(r, refused.name, (), nothing)}
+        if len(told) >= 3:
+            break
+        await anyio.sleep(1)
+
+    assert told == {
+        f"No rules enabled for account {idle.name}. Skipping.",
+        f"Processing mail account {refused.name}"[:40],
+        f"Error while retrieving mailbox {refused.name}: "[:40],
+    }
 
 
 @pytest.mark.contract(TEST_ACCOUNT)

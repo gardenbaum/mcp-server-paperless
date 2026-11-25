@@ -83,7 +83,4 @@ def _of_mail(said: str, mail: MailFacts) -> bool:
     if line.startswith("consuming ") and f" from mail {subject} from " in line:
         return True
     names = filter(None, map(plain, mail.attachment_names or ()))
-    return any(
-        line.startswith((f"skipping attachment {name} ", f"consuming attachment {name} from mail "))
-        for name in names
-    )
+    return any(line.startswith(f"skipping attachment {name} ") for name in names)

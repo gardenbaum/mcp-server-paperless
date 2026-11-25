@@ -21,7 +21,7 @@ Supplements decision-7, decision-18 and decision-80.
 - `explain_mail_import` is read-only, contacts only Paperless's API, and every answer begins with the sentence that it is no dry run and ends with the closest way to see what a rule does.
 - Each enabled rule is compared with what the caller knows of the mail: `ok`, `no` (most likely keeps it out; the mail server decides) or `unknown`. Two days at the edge of the age, the body, keywords, the type and place of attachments, a folder to move to and the effect of earlier rules are `unknown`. An Apple Mail colour that Paperless does not know is `no`: the rule fails. `ok` promises nothing.
 - Records are found by the subject, as Paperless cuts it. One of the rule, in its folder as written (Paperless compares it exactly), makes the check `record` `unknown`: if it is of this mail, it keeps it out; the uid is not known. Tasks are shown if the user may view them.
-- Logs (staff users): the known forms of Paperless 3.5.1, each matched from its start and with its logger: of `mail` (`paperless_mail`) those that name the account or one of its rules, or a mail with the subject; of `paperless` (`paperless.mail.tasks`) skipped fetches and those that name the account. Whole names count ("Work" is not "Work Private"), and a name inside a subject names nothing. With a known subject no line about another mail is shown. They go through the redaction of `get_log`. Without them the answer says that a skipped fetch is not known; the answer says how far back each log reaches.
+- Logs (staff users): the known forms of Paperless 3.5.1, each matched from its start and with its logger: of `mail` (`paperless_mail`) those that name the account or one of its rules, or a mail with the subject; of `paperless` (`paperless.mail.tasks`) skipped fetches and those that name the account. Whole names count ("Work" is not "Work Private"), and a name inside a subject names nothing. With a known subject no line that names another mail is shown, except as the consequences say. They go through the redaction of `get_log`. Without them the answer says that a skipped fetch is not known; the answer says how far back each log reaches.
 - One request at a time, nothing is started 40 seconds after the call began; rows, lines and the answer (50,000 characters) are bounded. What was not read or is left out stands in `not_checked`, and `complete` is false. What can never be known (records and tasks of others, skipped fetches before the log begins) stands there too and leaves `complete` as it is. A rate limit or a rejected credential ends the call.
 <!-- SECTION:DECISION:END -->
 
@@ -30,7 +30,9 @@ Supplements decision-7, decision-18 and decision-80.
 <!-- SECTION:CONSEQUENCES:BEGIN -->
 - The explanation can be wrong where a server searches differently; it never says that a mail would be imported.
 - Rules of other users that the caller does not see are not checked, and that is said.
-- A log line of an account with the same name, or of another account about a mail with the same subject that names no rule, is shown: staff see all logs anyway. Names with a full stop can be read in two ways ("Work.R1" with a rule, or a rule "R1.x").
+- Lines that may be about another mail are shown: "Error while processing mail 12" names only a uid; "Re from X" also fits the subject "Re"; a skipping line names no rule, so a mail with the same subject in another account fits. Staff see all logs anyway.
+- A line of the log contains what a sender wrote. A subject with a line break and the start of a record can forge a whole record in `mail`, with any of the known texts; it cannot be told apart and is data, not evidence. Whether something can be forged in `paperless` too was not examined.
+- Names with a full stop can be read in two ways ("Work.R1" with a rule, or a rule "R1.x").
 - A new wording of Paperless is not recognised: its lines are left out.
 <!-- SECTION:CONSEQUENCES:END -->
 
@@ -45,4 +47,5 @@ Supplements decision-7, decision-18 and decision-80.
 
 - `tests/services/test_mail_explanation.py`: every check in its results, records, tasks, logs, gaps, bounds, no secret, also in other forms (base64, XOAUTH2, several lines).
 - `tests/services/test_log_records.py`: records of a log, also with forged starts.
+- `tests/contract/test_mail.py`: the log lines of a fetch, fake and live.
 - `tests/tools/test_mail.py`, `tests/e2e/test_mail_import.py`: the tool, with a mail server and a user who is no staff.

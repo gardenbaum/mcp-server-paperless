@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:57Z'
-updated_date: '2026-11-25T10:27:14Z'
+updated_date: '2026-11-25T11:11:46Z'
 labels:
   - mail
 dependencies:
@@ -51,4 +51,6 @@ Owner, 2026-11-25: 'Überall wie von dir empfohlen bitte.': mail_fetch tasks say
 Implementation notes: the service was written before its tests, against the rule; afterwards 39 hand mutants of services/mail_explanation.py were run: 8 survived, were killed by new tests and re-run; services/mail_explanation.py and log_records.py 100 % with branches in the first run before the last tests. services/log_records.py is PLMCP-87.4's (local 7fcc37c) with a shorter docstring. Owner, 2026-11-25: skipped fetches from paperless.log, staff only, else not known. Read as: the log mail (design 7a) is used for the lines of the account and its rules as well. decision-90 (the CLI gave 89, removed again). No new Paperless call: accounts, rules, processed mail, tasks and logs are read with existing ports.
 
 Review of #163 fixed, tests first: forged log dates, log forms anchored with their loggers (services/mail_log_lines.py), one start time per log (logs_from is a list), gaps for failed tasks beyond the bound, bounded gaps, check record for records that can block the mail, texts of 2000 characters for sender, recipient and subject, extreme dates, two days of doubt, colours, folder to move to, exact folder for queued mail. 84 hand mutants killed. Limits: hidden records and tasks, the uid of a mail, names with a full stop, new log wordings, same subject in another account.
+
+Second review, tests first: another mail's line with the same file name is left out, wording of skipped fetches and of records of others, contract test of the log lines of a fetch, boundaries of 5 files and 18 gaps, decision-90 names forged records and lines that may be about another mail.
 <!-- SECTION:NOTES:END -->

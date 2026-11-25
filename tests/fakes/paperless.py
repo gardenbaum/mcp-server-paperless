@@ -3447,6 +3447,7 @@ class FakePaperless:
             state.mail_hosts,
             state.mail_silent_hosts,
             state.mail_fetches,
+            state.logs,
         )
 
     def _mail_viewer(self) -> MailViewer:

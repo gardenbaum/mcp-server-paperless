@@ -44,7 +44,7 @@ NOW: Final = datetime(2026, 11, 25, 12, 0, tzinfo=UTC)
 LOG: Final = "[2026-11-25 10:00:0{},123] [DEBUG] [paperless_mail] {}"
 RUN: Final = "[2026-11-25 10:00:0{},123] [INFO] [paperless.mail.tasks] {}"
 SKIP: Final = "Mail account processing is already running; skipping this run."
-OTHERS: Final = "records and tasks that are owned by others are not visible to you"
+OTHERS: Final = "records and tasks of others that you may not see are not looked at"
 
 
 @final
@@ -508,7 +508,10 @@ async def test_runs_are_told_by_the_task_only(logger: str) -> None:
         "No rules enabled for account Work. Skipping.",
         "Error while processing mail account Work Traceback (most recent call last):",
     ]
-    assert "1 fetch was skipped because another one was running" in found.message
+    assert (
+        "1 fetch was skipped because another one was running: what it would have fetched was not "
+        "fetched by it; it may have been for other accounts."
+    ) in found.message
 
 
 async def test_a_skipped_fetch_in_the_log_of_mails_is_none() -> None:
@@ -581,7 +584,6 @@ async def test_without_a_subject_lines_of_a_rule_are_shown_and_others_are_not(
         "Rule Work.R1: Skipping attachment a.pdf does not match pattern x",
         "Rule Work.R1: Skipping attachment a.pdf does match pattern x",
         "Rule Work.R1: Skipping attachment a.pdf since guessed mime type x is not supported",
-        "Rule Work.R1: Consuming attachment a.pdf from mail Other from a@b",
     ],
 )
 async def test_lines_about_an_attachment_are_those_with_its_name(line: str) -> None:
@@ -598,6 +600,16 @@ async def test_lines_about_an_attachment_are_those_with_its_name(line: str) -> N
     assert await shown("", " ") == 0
     assert len((await setup.explain(subject="S")).logs) == 0
     assert len((await setup.explain()).logs) == 1
+
+
+async def test_a_file_of_the_same_name_in_another_mail_is_not_shown() -> None:
+    setup = Setup()
+    setup.rule()
+    line = "Rule Work.R1: Consuming attachment a.pdf from mail Other from a@b"
+    setup.state.logs["mail"] = [LOG.format(0, line)]
+
+    assert (await setup.explain(subject="S", attachment_names=["a.pdf"])).logs == ()
+    assert len((await setup.explain(subject="Other")).logs) == 1
 
 
 async def test_a_line_of_a_rule_with_an_unknown_form_is_left_out() -> None:
@@ -1115,3 +1127,41 @@ async def test_the_name_of_an_account_is_no_pattern() -> None:
     setup.state.logs["mail"] = [LOG.format(0, "Account Work: Processing 2 rule(s)")]
 
     assert (await setup.explain()).logs == ()
+
+
+@pytest.mark.parametrize(("files", "more"), [(5, False), (6, True)])
+async def test_exactly_five_failed_files_are_all_of_them(*, files: int, more: bool) -> None:
+    setup = Setup()
+    for number in range(files):
+        setup.state.tasks.append(
+            FakeTask(
+                id=number + 1,
+                task_id=f"t{number}",
+                status="failure",
+                trigger_source="email_consume",
+            )
+        )
+
+    found = await setup.explain()
+
+    assert len(found.tasks) == 5
+    assert any("more files from mails" in gap for gap in found.not_checked) is more
+
+
+@pytest.mark.parametrize(("rules", "counted"), [(15, False), (16, True)])
+async def test_exactly_eighteen_gaps_are_all_shown(*, rules: int, counted: bool) -> None:
+    @final
+    class Silent(FakePaperless):
+        @override
+        async def list_processed_mail(self, **_: object) -> ProcessedMailPage:
+            raise UpstreamTimeout("s" * 4)
+
+    setup = Setup(make=Silent)
+    setup.state.logs["mail"], setup.state.logs["paperless"] = [], []
+    for _ in range(rules):
+        setup.rule()
+
+    found = await setup.explain(subject="s")
+
+    assert any("more things" in gap for gap in found.not_checked) is counted
+    assert len(found.not_checked) == (18 + 1 + counted)  # and the note about others

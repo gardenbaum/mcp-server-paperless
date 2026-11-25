@@ -68,7 +68,7 @@ LOG_CHARS: Final = 4000
 MAX_ANSWER: Final = 50_000
 SUBJECT: Final = 256
 NOT_STAFF: Final = "Logs need a staff user."
-OTHERS: Final = "records and tasks that are owned by others are not visible to you"
+OTHERS: Final = "records and tasks of others that you may not see are not looked at"
 UNKNOWN_SKIPS: Final = "whether a fetch was skipped is not known"
 # Days at the edge of an age that are unsure: the server counts whole days of its own time zone.
 DOUBT: Final = 2
@@ -272,10 +272,11 @@ def _message(rules: Sequence[MailRule] | None, chosen: Sequence[MailRule], skips
     else:
         said = "A check that says no most likely keeps the mail out; ok is no promise."
     if skips:
-        fetches = "1 fetch was" if skips == 1 else f"{skips} fetches were"
+        fetches, it = ("1 fetch was", "it") if skips == 1 else (f"{skips} fetches were", "them")
+        what = "it" if skips == 1 else "they"
         said += (
-            f" The log shows that {fetches} skipped because another one was running: what they "
-            "would have fetched was left to a later one."
+            f" The log shows that {fetches} skipped because another one was running: what {what} "
+            f"would have fetched was not fetched by {it}; it may have been for other accounts."
         )
     return (
         f"{NO_DRY_RUN} {said} Rules of other users that you may not see can act on the account "
