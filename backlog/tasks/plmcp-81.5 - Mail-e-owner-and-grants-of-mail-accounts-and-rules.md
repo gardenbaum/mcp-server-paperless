@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:58Z'
-updated_date: '2026-11-25T09:55:26Z'
+updated_date: '2026-11-25T11:00:29Z'
 labels:
   - mail
 dependencies: []
@@ -48,4 +48,6 @@ Fifth part of PLMCP-81: owner and grants of mail accounts and rules cannot be re
 Review round 1, tests first: the note for accounts (POST mail_accounts/test/ sends the saved password anywhere at once) and one for rules; after a 400 to owner and grants together the object is read again, for every kind; 40 seconds for mail objects; PermissionKind is one flat Literal; contract tests for an owner who is no superuser, an unowned object, and what a refused owner leaves of the grants (a rule: set; a tag: not). decision-87 instead of 84 (the CLI gave it).
 
 Review round 2, tests first: a refused named owner sets no grants (DRF's unique-together check runs first), only removing the owner beside an unowned twin sets them and then answers 400 (contract tests both ways, fake the same); the owner is compared after a 400; survivors of the read-back killed; the rule note names whole mails and attachments apart; a change grant on a rule is enough to make it delete mail (contract); the 40 seconds start with the call. Suppressions added in this task: PLR0913 on PermissionService.__init__ (the ports it uses) and on _halfway (what a failure leaves behind).
+
+The rule note and the partial stop after 40 seconds are approved by the owner (2026-11-25, question dialog: "Ja, alles", yes, all of it).
 <!-- SECTION:NOTES:END -->

@@ -20,6 +20,7 @@ The rest of AC 6 of PLMCP-81: `owner` and `set_permissions` of mail accounts and
 - The names of rules are unique per owner only.
 
 The owner approved decision 4a of the design of PLMCP-81 on 2026-11-24 ("Alle wie empfohlen", all as recommended, in the question "Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?").
+On 2026-11-25 the owner approved the note about rules and the stop after 40 seconds that can end a call with a part done ("Ja, alles", yes, all of it, in a question dialog).
 <!-- SECTION:CONTEXT:END -->
 
 ## Decision

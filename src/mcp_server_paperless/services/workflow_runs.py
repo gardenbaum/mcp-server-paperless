@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Final
 from mcp_server_paperless.domain.bulk import MAX_DOCUMENTS
 from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
+    MAX_CONFIRMATION,
     ConfirmationRequired,
     PaperlessMcpError,
     PermissionDenied,
@@ -67,7 +68,6 @@ BLOCKED_HINT: Final = (
     "owner."
 )
 # Characters of a confirmation; above that a run is refused, never cut (owner, 2026-11-24).
-MAX_CONFIRMATION: Final = 100_000
 FEWER: Final = "Choose fewer documents per call."
 SPLIT: Final = (
     "Fewer documents do not help: split the workflow into several, or run it in the Paperless web "
@@ -408,7 +408,7 @@ def _require_usable(workflow: Workflow) -> None:
         raise Validation(message, hint=hint)
     if not any(trigger.type == MANUAL for trigger in workflow.triggers):
         message = f"{subject} has no manual trigger, so it cannot be run by hand."
-        raise Validation(message, hint="Add a manual trigger to it in the Paperless web UI.")
+        raise Validation(message, hint="Add a manual trigger to it with update_workflow_part.")
 
 
 def _preview(call: _Call) -> WorkflowRunReport:
