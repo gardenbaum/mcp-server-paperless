@@ -16,7 +16,7 @@ from harness import TOKEN, paperless_answering, refused_url
 from oidc_issuer import CLIENT_ID, CLIENT_SECRET, stub_issuer
 
 from mcp_server_paperless.app import run_server
-from mcp_server_paperless.cli import main, main_http
+from mcp_server_paperless.cli import HELP, main, main_http
 from mcp_server_paperless.domain.errors import AuthenticationFailed
 from mcp_server_paperless.tools._shared import ANNOTATIONS
 
@@ -466,3 +466,13 @@ def test_the_real_process_serves_http_with_bearer_authentication() -> None:
     assert [r.status_code for r in (anonymous, wrong, served, foreign)] == [401, 401, 200, 421]
     assert all(r.headers["x-request-id"] for r in (anonymous, wrong, served, foreign))
     assert "server" not in served.headers
+
+
+def test_help_starts_nothing(capsys: pytest.CaptureFixture[str]) -> None:
+    main(
+        lambda: pytest.fail("protected"),
+        lambda _: pytest.fail("served"),
+        arguments=["-x", "--help"],
+    )
+
+    assert capsys.readouterr().out == HELP
