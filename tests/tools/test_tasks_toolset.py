@@ -176,6 +176,7 @@ async def test_the_overview_is_read_only_and_takes_its_filters() -> None:
         "completed": 0,
     }
     assert [row["id"] for row in cast("list[Json]", plain["active"])] == [2]
+    assert plain["active_truncated"] is False
     assert plain["by_type_of"] == "every_user"
     for days in (0, 366):
         _ = await refusal(fake(state), "get_task_overview", days=days)

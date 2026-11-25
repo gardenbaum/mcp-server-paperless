@@ -330,6 +330,24 @@ async def test_the_summary_is_wider_than_the_list_for_who_may_view_the_status(
         _ = await monitor.task_lists.count_tasks(TaskFilters())
 
 
+@pytest.mark.contract(VIEWER)
+@pytest.mark.contract(SUMMARY)
+async def test_the_summary_of_a_superuser_without_the_staff_flag_is_of_every_user(
+    backend: Backend,
+) -> None:
+    _ = backend.consume(succeed=True)
+    superuser = backend.restricted(frozenset(), superuser=True)
+
+    viewer = await superuser.task_lists.get_viewer()
+    of_all, seen = [
+        {s.task_type: s.total for s in await ports.task_lists.summarize_tasks(days=1)}
+        for ports in (backend.admin, superuser)
+    ]
+
+    assert (viewer.sees_all, viewer.summary_of_all) == (False, True)
+    assert seen["consume_file"] == of_all["consume_file"]
+
+
 @pytest.mark.contract(COUNT)
 @pytest.mark.contract(ACTIVE)
 @pytest.mark.contract(SUMMARY)

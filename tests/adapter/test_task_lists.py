@@ -284,38 +284,38 @@ async def test_the_acknowledged_filter_is_sent_as_true_or_false(
 CET = timezone(timedelta(hours=1))
 
 
-@pytest.mark.parametrize(
-    ("filters", "sent"),
-    [
-        (
-            TaskFilters(states=("failure", "revoked")),
-            [("status", "failure"), ("status", "revoked")],
-        ),
-        (
-            TaskFilters(task_types=("mail_fetch", "llm_index")),
-            [("task_type", "mail_fetch"), ("task_type", "llm_index")],
-        ),
-        (
-            TaskFilters(trigger_sources=("web_ui", "email_consume")),
-            [("trigger_source", "web_ui"), ("trigger_source", "email_consume")],
-        ),
-        (TaskFilters(acknowledged=True), [("acknowledged", "true")]),
-        (TaskFilters(is_complete=True), [("is_complete", "true")]),
-        (TaskFilters(is_complete=False), [("is_complete", "false")]),
-        (TaskFilters(owner=7), [("owner", "7")]),
-        (TaskFilters(owner=0), [("owner", "0")]),
-        (TaskFilters(name="a b&c+d"), [("name", "a b&c+d")]),
-        (TaskFilters(result="50%"), [("result", "50%")]),
-        (
-            TaskFilters(created_from=datetime(2026, 11, 1, 8, tzinfo=CET)),
-            [("date_created_after", "2026-11-01T08:00:00+01:00")],
-        ),
-        (
-            TaskFilters(created_to=datetime(2026, 11, 2, tzinfo=UTC)),
-            [("date_created_before", "2026-11-02T00:00:00+00:00")],
-        ),
-    ],
-)
+FILTERS: list[tuple[TaskFilters, Pairs]] = [
+    (
+        TaskFilters(states=("failure", "revoked")),
+        [("status", "failure"), ("status", "revoked")],
+    ),
+    (
+        TaskFilters(task_types=("mail_fetch", "llm_index")),
+        [("task_type", "mail_fetch"), ("task_type", "llm_index")],
+    ),
+    (
+        TaskFilters(trigger_sources=("web_ui", "email_consume")),
+        [("trigger_source", "web_ui"), ("trigger_source", "email_consume")],
+    ),
+    (TaskFilters(acknowledged=True), [("acknowledged", "true")]),
+    (TaskFilters(is_complete=True), [("is_complete", "true")]),
+    (TaskFilters(is_complete=False), [("is_complete", "false")]),
+    (TaskFilters(owner=7), [("owner", "7")]),
+    (TaskFilters(owner=0), [("owner", "0")]),
+    (TaskFilters(name="a b&c+d"), [("name", "a b&c+d")]),
+    (TaskFilters(result="50%"), [("result", "50%")]),
+    (
+        TaskFilters(created_from=datetime(2026, 11, 1, 8, tzinfo=CET)),
+        [("date_created_after", "2026-11-01T08:00:00+01:00")],
+    ),
+    (
+        TaskFilters(created_to=datetime(2026, 11, 2, tzinfo=UTC)),
+        [("date_created_before", "2026-11-02T00:00:00+00:00")],
+    ),
+]
+
+
+@pytest.mark.parametrize(("filters", "sent"), FILTERS)
 async def test_every_filter_is_sent_under_the_name_paperless_has(
     make_client: ClientFactory, filters: TaskFilters, sent: Pairs
 ) -> None:
@@ -427,6 +427,19 @@ async def test_the_counts_take_the_filters_of_the_list(make_client: ClientFactor
             ("name", "x"),
         ]
     ]
+
+
+@pytest.mark.parametrize(
+    ("filters", "sent"), [(f, s) for f, s in FILTERS if not f.states and f.is_complete is None]
+)
+async def test_every_filter_of_the_counts_is_sent_under_its_name(
+    make_client: ClientFactory, filters: TaskFilters, sent: Pairs
+) -> None:
+    server = Answers({"all": 0, "needs_attention": 0, "in_progress": 0, "completed": 0})
+
+    _ = await PaperlessTaskListReader(make_client(server)).count_tasks(filters)
+
+    assert server.sent == [sent]
 
 
 async def test_the_running_tasks_are_rows_like_those_of_the_list(
