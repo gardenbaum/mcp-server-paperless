@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T10:18:27Z'
-updated_date: '2026-11-25T10:48:35Z'
+updated_date: '2026-11-25T11:26:17Z'
 labels:
   - views
 dependencies:
@@ -53,4 +53,6 @@ Implemented, decision-92. Red first: adapter and service modules failed to impor
 Beyond the design: calls of one server wait for each other (parallel tool calls would undo each other); an answer to create or update also shows where the view is (one request more).
 For PLMCP-83: POST /api/ui_settings/ counts as covered in the table; the other settings stay open there (Limits text of api-coverage.md).
 just check was not run as a whole locally.
+
+Review: a refused second read, the texts and foreign answers (redirect, login page) tested and named truly; what a late POST would do is said (NOT_THERE, decision-92); a call waits at most 40 s for another; configuration.md wrapped. Tests first (7 red); 44 mutants, none survives.
 <!-- SECTION:NOTES:END -->
