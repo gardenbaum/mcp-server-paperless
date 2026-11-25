@@ -295,7 +295,8 @@ takes more than a misunderstanding:
 - **The trash first.** Deleting a document moves it to the Paperless trash, from where it can be
   restored. Emptying the trash is a separate tool in a toolset that is off by default.
 - **You choose the surface.** Toolsets are opt-in, `PAPERLESS_MCP_READ_ONLY=true` offers only
-  tools that change nothing, and `PAPERLESS_MCP_DISABLED_TOOLS` takes single tools away.
+  tools that change nothing, `mail:read` in the selection does so for one toolset, and
+  `PAPERLESS_MCP_DISABLED_TOOLS` takes single tools away.
 - **Paperless stays in charge.** The server acts as the user of its API token: the permissions
   set in Paperless apply to every call.
 - **Secrets stay secret.** Passwords and API keys are write-only. Tool calls log neither tokens nor
@@ -315,7 +316,7 @@ them.
 | `PAPERLESS_URL` | Base URL of your Paperless instance (required) |
 | `PAPERLESS_TOKEN` | Paperless API token (required) |
 | `PAPERLESS_PUBLIC_URL` | Base URL for links shown to you, if it differs from `PAPERLESS_URL` |
-| `PAPERLESS_MCP_TOOLSETS` | Toolsets to offer, comma-separated, or `all` (default `core,ai`) |
+| `PAPERLESS_MCP_TOOLSETS` | Toolsets to offer, comma-separated, or `all` (default `core,ai`); `name:read` offers a toolset only for reading (after 0.4.0) |
 | `PAPERLESS_MCP_READ_ONLY` | `true` to offer only tools that change nothing |
 | `PAPERLESS_MCP_REQUIRE_DIALOG` | `true` to let only an accepted dialog confirm, never `confirm=true` |
 | `PAPERLESS_MCP_DISABLED_TOOLS` | Tools never offered, by name |
