@@ -1,4 +1,4 @@
-"""Owners and grants of documents and taxonomy objects, and the users and groups they refer to.
+"""Owners and grants of documents, taxonomy and mail objects, and their users and groups.
 
 ``set_permissions`` reads the current owner and grants of every selected object, works out the
 complete new grants and sends only the objects that change. Two modes (the lists a caller leaves
@@ -54,6 +54,7 @@ if TYPE_CHECKING:
         ObjectAccess,
         PermissionKind,
         PermissionsRequest,
+        SharedKind,
     )
     from mcp_server_paperless.domain.ports import InstanceReader, PermissionReader, PermissionWriter
     from mcp_server_paperless.services.principals import PrincipalKind
@@ -62,7 +63,7 @@ if TYPE_CHECKING:
 # Objects whose details a confirmation names; the others are counted.
 SHOWN: Final = 5
 # The taxonomy kinds whose document counts depend on who may see a document.
-COUNTED: Final[tuple[PermissionKind, ...]] = (
+COUNTED: Final[tuple[SharedKind, ...]] = (
     "tag",
     "correspondent",
     "document_type",
@@ -74,7 +75,20 @@ LABELS: Final[dict[PermissionKind, str]] = {
     "correspondent": "correspondent",
     "document_type": "document type",
     "storage_path": "storage path",
+    "mail_account": "mail account",
+    "mail_rule": "mail rule",
 }
+# Where the ids of objects that are chosen by id only are found.
+FINDERS: Final[dict[PermissionKind, str]] = {
+    "document": "search_documents",
+    "mail_account": "list_mail_accounts",
+    "mail_rule": "list_mail_rules",
+}
+ACCOUNT_NOTE: Final = (
+    "Whoever may change a mail account can point it at another server, to which Paperless then "
+    "sends the saved password or token, and add rules that import, move or delete its mail. A "
+    "grant on an account is none on its rules"
+)
 NONE_GIVEN = "Nothing to change: no owner and no grants were given."
 NONE_GIVEN_HINT = (
     "Pass owner, clear_owner, or users or groups in view_users, view_groups, change_users or "
@@ -331,10 +345,12 @@ class PermissionService:
         if not 1 <= len(items) <= MAX_OBJECTS:
             message = f"Select between 1 and {MAX_OBJECTS} objects per call."
             raise Validation(message, hint="Work in several steps.")
-        if kind == "document":
+        if kind == "document" or kind == "mail_account" or kind == "mail_rule":  # noqa: PLR1714 -- narrows the type
             if not all(is_numeric(item) for item in items):
-                message = "Documents are selected by id, not by title."
-                raise Validation(message, hint="Find the ids with search_documents.")
+                label = LABELS[kind].capitalize()
+                by = "title" if kind == "document" else "name"
+                message = f"{label}s are selected by id, not by {by}."
+                raise Validation(message, hint=f"Find the ids with {FINDERS[kind]}.")
             return list(dict.fromkeys(int(item) for item in items))
         return list(
             dict.fromkeys([(await self._taxonomy.resolve(kind, item)).id for item in items])
@@ -378,7 +394,7 @@ class PermissionService:
                         error, _halfway(error, plan, plans, written, unknown=unknown)
                     ) from None
         finally:
-            for kind_to_forget in (kind,) if kind != "document" else COUNTED:
+            for kind_to_forget in _cached(kind):
                 self._taxonomy.invalidate(kind_to_forget)
         return written
 
@@ -450,7 +466,23 @@ class PermissionService:
         text = ". ".join(details)
         if len(changing) > SHOWN:
             text += f". {len(changing) - SHOWN} more would change as well"
+        if kind == "mail_account" and any(map(_hands_over, changing)):
+            text += f". {ACCOUNT_NOTE}"
         return f"{head}: {text}"
+
+
+def _cached(kind: PermissionKind) -> tuple[SharedKind, ...]:
+    """The kinds of taxonomy whose cached rows a change may make wrong."""
+    if kind == "document":
+        return COUNTED
+    return () if kind == "mail_account" or kind == "mail_rule" else (kind,)  # noqa: PLR1714 -- narrows the type
+
+
+def _hands_over(plan: _Plan) -> bool:
+    """Whether somebody who may not change the object now may then."""
+    before, after = plan.current.permissions, plan.grants
+    gains = set(after.change_users) - set(before.change_users)
+    return plan.owner_changes or bool(gains or set(after.change_groups) - set(before.change_groups))
 
 
 def _halfway(
@@ -497,8 +529,8 @@ def _unseen(kind: PermissionKind, missing: list[int]) -> NotFound:
     noun = "id" if len(missing) == 1 else "ids"
     message = f"No {label} with {noun} {', '.join(map(str, missing))} exists that you may see."
     hint = (
-        "Find the ids with search_documents."
-        if kind == "document"
+        f"Find the ids with {FINDERS[kind]}."
+        if kind in FINDERS
         else "Call list_taxonomy to see what exists."
     )
     return NotFound(message, hint=hint)

@@ -804,7 +804,7 @@ def seeded() -> FakeState:
     )
 
 
-def _label(obj: FakeDocument | FakeTaxonomy) -> str:
+def _label(obj: FakeDocument | FakeTaxonomy | FakeMailAccount | FakeMailRule) -> str:
     """The title of a document, else the name."""
     return obj.title if isinstance(obj, FakeDocument) else obj.name
 
@@ -3076,11 +3076,15 @@ class FakePaperless:
 
     # --- PermissionReader and PermissionWriter
 
-    def _permission_objects(self, kind: PermissionKind) -> list[FakeDocument] | list[FakeTaxonomy]:
+    def _permission_objects(
+        self, kind: PermissionKind
+    ) -> list[FakeDocument] | list[FakeTaxonomy] | list[FakeMailAccount] | list[FakeMailRule]:
         state = self.state
         return cast(
-            "list[FakeDocument] | list[FakeTaxonomy]",
+            "list[FakeDocument] | list[FakeTaxonomy] | list[FakeMailAccount] | list[FakeMailRule]",
             {
+                "mail_account": state.mail_accounts,
+                "mail_rule": state.mail_rules,
                 "document": state.documents,
                 "tag": state.tags,
                 "correspondent": state.correspondents,

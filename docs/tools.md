@@ -114,7 +114,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 
 | Tool | Kind | What it does |
 |---|---|---|
-| `set_permissions` | destructive, confirm | Share documents, tags, correspondents, document types or storage paths, or hand them over. |
+| `set_permissions` | destructive, confirm | Share documents, taxonomy objects, mail accounts or mail rules, or hand them over. |
 | `list_users` | read | List Paperless users as compact rows: id, username, name, active, superuser, group ids. |
 | `list_groups` | read | List Paperless user groups as compact rows: id and name. |
 

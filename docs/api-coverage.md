@@ -109,15 +109,15 @@ Limits.
 | `POST /api/mail_accounts/` | `create_mail_account` |  |
 | `POST /api/mail_accounts/test/` | `test_mail_account` |  |
 | `DELETE /api/mail_accounts/{id}/` | `delete_mail_account` |  |
-| `GET /api/mail_accounts/{id}/` | `create_mail_rule`, `delete_mail_account`, `delete_processed_mail`, `get_mail_account`, `process_mail_account` and 3 more |  |
-| `PATCH /api/mail_accounts/{id}/` | `update_mail_account` |  |
+| `GET /api/mail_accounts/{id}/` | `create_mail_rule`, `delete_mail_account`, `delete_processed_mail`, `get_mail_account`, `process_mail_account` and 4 more |  |
+| `PATCH /api/mail_accounts/{id}/` | `set_permissions`, `update_mail_account` |  |
 | `PUT /api/mail_accounts/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `POST /api/mail_accounts/{id}/process/` | `process_mail_account` |  |
 | `GET /api/mail_rules/` | `delete_mail_account`, `list_mail_rules` |  |
 | `POST /api/mail_rules/` | `create_mail_rule` |  |
 | `DELETE /api/mail_rules/{id}/` | `delete_mail_rule` |  |
-| `GET /api/mail_rules/{id}/` | `delete_mail_rule`, `delete_processed_mail`, `get_mail_rule`, `get_processed_mail`, `update_mail_rule` |  |
-| `PATCH /api/mail_rules/{id}/` | `update_mail_rule` |  |
+| `GET /api/mail_rules/{id}/` | `delete_mail_rule`, `delete_processed_mail`, `get_mail_rule`, `get_processed_mail`, `set_permissions` and 1 more |  |
+| `PATCH /api/mail_rules/{id}/` | `set_permissions`, `update_mail_rule` |  |
 | `PUT /api/mail_rules/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `GET /api/oauth/callback/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `GET /api/processed_mail/` | `delete_processed_mail`, `get_processed_mail`, `list_processed_mail` |  |
@@ -253,11 +253,9 @@ TOML file.
 | `GET /api/groups/` | `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
 | `POST /api/mail_accounts/` | `body:account_type`, `body:expiration`, `body:is_token`, `body:owner`, `body:set_permissions` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `POST /api/mail_accounts/test/` | `body:account_type`, `body:character_set`, `body:expiration`, `body:imap_port`, `body:imap_security`, `body:imap_server`, `body:is_token`, `body:name`, `body:owner`, `body:password`, `body:set_permissions`, `body:username` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
-| `PATCH /api/mail_accounts/{id}/` | `body:owner`, `body:set_permissions` | PLMCP-81.5 |
 | `PATCH /api/mail_accounts/{id}/` | `body:account_type`, `body:expiration`, `body:is_token` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `POST /api/mail_accounts/{id}/process/` | `body:account_type`, `body:expiration`, `body:owner`, `body:set_permissions` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `POST /api/mail_rules/` | `body:set_permissions` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
-| `PATCH /api/mail_rules/{id}/` | `body:set_permissions` | PLMCP-81.5 |
 | `GET /api/saved_views/` | `query:full_perms`, `query:ordering` | PLMCP-88 |
 | `POST /api/saved_views/` | `body:display_fields`, `body:display_mode`, `body:icon`, `body:owner`, `body:set_permissions` | PLMCP-88 |
 | `PATCH /api/saved_views/{id}/` | `body:display_fields`, `body:display_mode`, `body:icon`, `body:owner`, `body:set_permissions` | PLMCP-88 |

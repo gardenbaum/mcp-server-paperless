@@ -323,7 +323,10 @@ documents in its refusal. E-mail needs a mail server set up in Paperless
 ### `permissions`
 
 Off by default: `set_permissions`, `list_users`, `list_groups`. Shares documents, tags,
-correspondents, document types and storage paths and hands them over: `set_permissions` sets the
+correspondents, document types, storage paths, mail accounts and mail rules (the last two by id) and
+hands them over. Whoever may change a mail account can point it at another server, to which Paperless
+then sends the saved password, so the confirmation says so; a grant on an account is none on its
+rules. `set_permissions` sets the
 owner and the users and groups who may view or change, by name or id. Its default mode `merge`
 only adds to the grants and mode `replace` makes each list you give exactly that list. Granting
 access cannot be taken back, so every call that changes anything needs `confirm` (also a merge

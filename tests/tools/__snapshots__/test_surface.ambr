@@ -23143,7 +23143,7 @@
         'title': 'Set permissions',
       }),
       'description': '''
-        Share documents, tags, correspondents, document types or storage paths, or hand them over.
+        Share documents, taxonomy objects, mail accounts or mail rules, or hand them over.
         
         Sets who owns the objects and which users and groups may view or change them, by name or id.
         A change grant includes view. Lists you leave out are never touched in either mode, so a
@@ -23155,10 +23155,12 @@
         show the user, first names, per object, who gains and who loses access and what the owner
         change does (see confirm). Objects that already are as asked are left alone and need no
         confirm. Needs to own the objects (or no owner) or be a superuser, plus the permission to
-        change the kind. Other tools touch permissions too: update_document(owner=) only changes a
-        document's owner alongside other edits, and bulk_edit_taxonomy (bulk toolset) sets permissions
-        of taxonomy objects with a dry_run preview, and replaces the lists you leave out; this tool
-        also covers documents and keeps the lists you leave out. Look up users and groups with
+        change the kind. Whoever may change a mail account can point it at another server with its saved
+        password; the confirmation says so, and a grant on an account is none on its rules. Other tools
+        touch permissions too: update_document(owner=) only changes a document's owner alongside other
+        edits, and bulk_edit_taxonomy (bulk toolset) sets permissions of taxonomy objects with a dry_run
+        preview, and replaces the lists you leave out; this tool also covers documents and keeps the
+        lists you leave out. Look up users and groups with
         list_users and list_groups.
       ''',
       'inputSchema': dict({
@@ -23219,7 +23221,7 @@
             'type': 'boolean',
           }),
           'items': dict({
-            'description': 'The objects, at most 100. Documents: ids from search_documents. Others: names or ids, see list_taxonomy.',
+            'description': 'The objects, at most 100. Documents: ids from search_documents. Mail accounts and rules: ids from list_mail_accounts and list_mail_rules (mail toolset). Others: names or ids, see list_taxonomy.',
             'items': dict({
               'anyOf': list([
                 dict({
@@ -23235,15 +23237,29 @@
             'type': 'array',
           }),
           'kind': dict({
-            'description': 'What the objects are: document, tag, correspondent, document_type or storage_path.',
-            'enum': list([
-              'document',
-              'tag',
-              'correspondent',
-              'document_type',
-              'storage_path',
+            'anyOf': list([
+              dict({
+                'const': 'document',
+                'type': 'string',
+              }),
+              dict({
+                'enum': list([
+                  'tag',
+                  'correspondent',
+                  'document_type',
+                  'storage_path',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'enum': list([
+                  'mail_account',
+                  'mail_rule',
+                ]),
+                'type': 'string',
+              }),
             ]),
-            'type': 'string',
+            'description': 'What the objects are: document, tag, correspondent, document_type, storage_path, mail_account or mail_rule.',
           }),
           'mode': dict({
             'default': 'merge',
@@ -23332,14 +23348,28 @@
             'type': 'integer',
           }),
           'kind': dict({
-            'enum': list([
-              'document',
-              'tag',
-              'correspondent',
-              'document_type',
-              'storage_path',
+            'anyOf': list([
+              dict({
+                'const': 'document',
+                'type': 'string',
+              }),
+              dict({
+                'enum': list([
+                  'tag',
+                  'correspondent',
+                  'document_type',
+                  'storage_path',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'enum': list([
+                  'mail_account',
+                  'mail_rule',
+                ]),
+                'type': 'string',
+              }),
             ]),
-            'type': 'string',
           }),
           'message': dict({
             'type': 'string',

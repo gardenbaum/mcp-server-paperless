@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, final, override
 
 import pytest
 from fakes.accounts import ADMIN, READER
+from fakes.mail import FakeMailAccount, FakeMailRule
 from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
 
 from mcp_server_paperless.domain.errors import (
@@ -1027,3 +1028,124 @@ async def test_a_caller_lookup_that_fails_leaves_the_warning_in() -> None:
         _ = await service.set_permissions("document", [PUBLIC], asked)
 
     assert refusal.value.message.endswith("the new owner controls it; you may lose access to it).")
+
+
+# --- mail accounts and rules
+
+
+ACCOUNT_NOTE = (
+    "Whoever may change a mail account can point it at another server, to which Paperless then "
+    "sends the saved password or token, and add rules that import, move or delete its mail. A "
+    "grant on an account is none on its rules"
+)
+
+
+def with_mail(setup: Setup) -> None:
+    setup.state.mail_accounts.append(
+        FakeMailAccount(
+            id=5, name="Work", imap_server="h", imap_port=1, username="u", password="p", owner=2
+        )
+    )
+    setup.state.mail_rules.append(FakeMailRule(id=6, name="Bills", account=5, owner=2))
+    setup.state.mail_rules.append(FakeMailRule(id=7, name="Bills", account=5, owner=BLIND_ID))
+
+
+@pytest.mark.decision("decision-87")
+async def test_a_change_grant_on_an_account_says_what_it_gives() -> None:
+    setup = Setup(writes=False)
+    with_mail(setup)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.run("mail_account", [5], change_users=["e2e-reader"], confirm=False)
+
+    assert raised.value.message == (
+        "Nothing was changed. Confirming would change the permissions of 1 mail account 'Work': "
+        f"gains change: user 'e2e-reader'. {ACCOUNT_NOTE}."
+    )
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.parametrize(
+    ("request_", "noted"),
+    [
+        ({"view_users": ["e2e-reader"]}, False),
+        ({"change_groups": ["e2e-group"]}, True),
+        ({"owner": "e2e-reader"}, True),
+        ({"clear_owner": True}, True),
+    ],
+)
+async def test_the_note_stands_where_somebody_may_change_the_account(
+    request_: dict[str, object],
+    noted: bool,  # noqa: FBT001 -- the case
+) -> None:
+    setup = Setup(writes=False)
+    with_mail(setup)
+
+    asked = PermissionsRequest.model_validate(request_)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.set_permissions("mail_account", [5], asked)
+    with pytest.raises(ConfirmationRequired) as ruled:
+        _ = await setup.service.set_permissions("mail_rule", ["6"], asked)
+
+    assert (ACCOUNT_NOTE in raised.value.message) == noted
+    assert ACCOUNT_NOTE not in ruled.value.message
+
+
+@pytest.mark.decision("decision-87")
+async def test_losing_change_needs_no_note() -> None:
+    setup = Setup(writes=False)
+    with_mail(setup)
+    setup.state.mail_accounts[0].editors = {READER_ID}
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.run("mail_account", [5], mode="replace", change_users=[], confirm=False)
+
+    assert "loses" in raised.value.message
+    assert ACCOUNT_NOTE not in raised.value.message
+
+
+@pytest.mark.decision("decision-87")
+async def test_confirmed_mail_objects_get_their_owner_and_grants_and_no_link() -> None:
+    setup = Setup()
+    with_mail(setup)
+
+    account = await setup.run("mail_account", ["5"], change_users=["e2e-reader"])
+    rule = await setup.run("mail_rule", [6], owner="e2e-reader")
+
+    [row] = account.objects
+    assert (row.id, row.name, row.web_url, row.changed) == (5, "Work", None, True)
+    assert names(row.access.change_users) == ["e2e-reader"]
+    assert setup.state.mail_accounts[0].editors == {READER_ID}
+    assert rule.objects[0].access.owner is not None
+    assert setup.state.mail_rules[0].owner == READER_ID
+    assert account.message == "Changed the permissions of 'Work' (merge)."
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.parametrize(
+    ("kind", "label", "tool"),
+    [
+        ("mail_account", "Mail accounts", "list_mail_accounts"),
+        ("mail_rule", "Mail rules", "list_mail_rules"),
+    ],
+)
+async def test_mail_objects_are_chosen_by_id_only(
+    kind: PermissionKind, label: str, tool: str
+) -> None:
+    """Two rules of different owners can have the same name."""
+    setup = Setup(writes=False)
+    with_mail(setup)
+
+    with pytest.raises(Validation) as named:
+        _ = await setup.run(kind, ["Work"], view_users=["e2e-reader"])
+    with pytest.raises(NotFound) as missing:
+        _ = await setup.run(kind, [99], view_users=["e2e-reader"])
+
+    assert named.value.describe() == (
+        f"{label} are selected by id, not by name. Hint: Find the ids with {tool}."
+    )
+    assert missing.value.describe() == (
+        f"No {label.lower().removesuffix('s')} with id 99 exists that you may see. Hint: Find the "
+        f"ids with {tool}."
+    )

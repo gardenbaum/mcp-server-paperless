@@ -1,10 +1,10 @@
 """Permissions: who owns an object and who may view or change it, and the users and groups.
 
-Documents, tags, correspondents, document types and storage paths each have an owner (null: no
-owner, every user with the model's permission may use the object) and grants for users and
-groups. A grant to change includes the grant to view: Paperless stores both, and a change grant
-always comes with a view grant when it is set. The port reads and writes ids; the tools speak
-names, and the results carry both.
+Documents, tags, correspondents, document types, storage paths, mail accounts and mail rules each
+have an owner (null: no owner, every user with the model's permission may use the object) and
+grants for users and groups. A grant to change includes the grant to view: Paperless stores both,
+and a change grant always comes with a view grant when it is set. The port reads and writes ids;
+the tools speak names, and the results carry both.
 
 Output models are tool output schemas: a one-line class docstring each, and field descriptions
 only where the name does not say enough.
@@ -20,7 +20,9 @@ from mcp_server_paperless.domain.documents import NameOrId
 # Most objects one set_permissions call may name: a page of search_documents results (100) fits.
 MAX_OBJECTS = 100
 
-type PermissionKind = Literal["document", "tag", "correspondent", "document_type", "storage_path"]
+type SharedKind = Literal["tag", "correspondent", "document_type", "storage_path"]
+type MailKind = Literal["mail_account", "mail_rule"]
+type PermissionKind = Literal["document"] | SharedKind | MailKind
 type Mode = Literal["merge", "replace"]
 
 
