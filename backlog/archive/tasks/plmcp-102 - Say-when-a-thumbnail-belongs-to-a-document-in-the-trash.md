@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T20:43:13Z'
-updated_date: '2026-11-24T22:35:42Z'
+updated_date: '2026-11-25T07:12:56Z'
 labels:
   - tools
 dependencies: []
@@ -22,7 +22,7 @@ Paperless 3.5.1 serves the thumbnail of a trashed document (views.py thumb resol
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A live test shows what Paperless 3.5.1 answers for the thumbnail of a trashed document and of a trashed version
+- [x] #1 A live test shows what Paperless 3.5.1 answers for the thumbnail of a trashed document and of a trashed version
 - [x] #2 The tool and the resource either say that the document is in the trash or answer not found, as decided in the task notes, and the fake behaves like Paperless
 - [x] #3 Tool text, docs and tests cover it, including a restricted user
 <!-- AC:END -->
@@ -52,6 +52,8 @@ Decision of the implementer, for the owner to confirm (decision-78, proposed): a
 Review: a version is shown only if its document is listed and its own metadata is there (get_root first), so a live version of a trashed document is not shown; by the 3.5.1 source deleting a document deletes its versions, so this is pinned at the service only. Tests for failed look-ups (titles, root, metadata; NotFound and others): never shown. The root tests were red first; those of titles and metadata passed on the earlier code.
 
 decision-78 accepted by the owner on 2026-11-24. AC 1: the contract tests run live in CI of #152. DoD 2 and 4: CI and merge of #152.
+
+AC 1: the contract test of the trashed document and version ran live in CI of #152 (green).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
