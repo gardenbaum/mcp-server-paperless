@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:38Z'
-updated_date: '2026-11-25T13:51:10Z'
+updated_date: '2026-11-25T14:07:05Z'
 labels:
   - admin
 dependencies: []
@@ -58,6 +58,8 @@ Release notes draft: BREAKING: list_tasks, acknowledge_tasks and run_task moved 
 Green on d4f9fcf: every check of #167. Full hosted E2E of the stack 45618698199 (9c536a1): tests/contract/test_task_lists.py 26, tests/e2e/test_task_lists.py 12 passed; only e2e-imap red, on a test that is red on main too (runs 45609667829, 45615009952).
 
 The E2E tests were written before their first hosted run and not run red (no local E2E). The README names the break with 89.3's commit.
+
+Review fixes: the pointers to list_tasks name the toolset (snapshot of upload_documents changed), superuser without staff pinned on fake and 3.5.1, every ordering in the adapter test, hashes of the moved equivalent mutants recomputed with mutmut's own functions in-process (no run), line breaks in configuration.md.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -745,10 +745,8 @@ async def test_a_disabled_audit_log_is_a_feature_error(make_client: ClientFactor
             400, text="Audit log is disabled", headers={"Content-Type": "text/html"}
         )
 
-    with pytest.raises(FeatureUnavailable, match="audit log is disabled") as raised:
+    with pytest.raises(FeatureUnavailable, match="audit log is disabled"):
         _ = await PaperlessDocumentReader(make_client(answer)).list_document_history(1)
-
-    assert raised.value.hint
 
 
 async def test_titles_are_asked_for_by_id_in_one_request(make_client: ClientFactory) -> None:
@@ -999,7 +997,7 @@ async def test_a_disabled_audit_log_is_explained_word_for_word(make_client: Clie
         _ = await PaperlessDocumentReader(make_client(answer)).list_document_history(1)
 
     assert raised.value.message == "The Paperless audit log is disabled on this instance."
-    assert raised.value.hint == "Leave history out of include."
+    assert raised.value.hint is None
 
 
 async def test_a_note_whose_author_was_deleted_has_no_user() -> None:
@@ -1214,7 +1212,7 @@ async def test_a_history_over_the_limit_is_refused_with_the_reason(encoding: str
 
     assert raised.value.describe() == (
         "The history of document 1 is over 64 MiB, because Paperless sends every corrected text "
-        "with it. Hint: Leave history out of include, or look at it in the Paperless web UI."
+        "with it."
     )
     assert HISTORY_BYTES == 64 * 1024 * 1024
     assert "gzip" in sent[0]

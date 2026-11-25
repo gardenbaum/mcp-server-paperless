@@ -1,6 +1,7 @@
 """DocumentService.search: names to ids, invalid combinations, and readable rows."""
 
 from datetime import UTC, date, datetime
+from typing import override
 
 import pytest
 from fakes.accounts import ADMIN, PUBLIC_NOTE, READER
@@ -26,8 +27,16 @@ from mcp_server_paperless.domain.documents import (
     SuggestionNames,
     Suggestions,
 )
-from mcp_server_paperless.domain.errors import Ambiguous, NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.errors import (
+    Ambiguous,
+    AnswerTooLarge,
+    NotFound,
+    PermissionDenied,
+    Validation,
+)
+from mcp_server_paperless.domain.ports import DocumentReader
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.documents import MANY_TIMEOUT
 from mcp_server_paperless.services.documents import (
     DEFAULT_SLICE,
     DocumentService,
@@ -805,3 +814,27 @@ async def test_the_pages_hold_every_entry_once_and_never_the_text(count: int) ->
     assert [entry.id for entry in seen] == [1000 - n for n in range(count)]
     assert all("content" not in entry.changes for entry in seen)
     assert "SECRET TEXT" not in repr(seen)
+
+
+class Huge(FakePaperless):
+    @override
+    async def list_document_history(self, document_id: int) -> tuple[HistoryEntry, ...]:
+        message = f"The history of document {document_id} is over 64 MiB."
+        raise AnswerTooLarge(message)
+
+
+@pytest.mark.decision("decision-95")
+async def test_a_history_that_is_too_large_says_what_to_leave_out() -> None:
+    with pytest.raises(AnswerTooLarge) as raised:
+        _ = await service(Huge(seeded(), user=ADMIN[0])).get(1, ("history",))
+
+    assert raised.value.describe() == (
+        "The history of document 1 is over 64 MiB. "
+        "Hint: Leave history out of include, or look at it in the Paperless web UI."
+    )
+
+
+@pytest.mark.decision("decision-95")
+def test_the_port_says_how_long_a_history_may_take() -> None:
+    assert MANY_TIMEOUT == 60.0
+    assert "60 seconds" in (DocumentReader.list_document_history.__doc__ or "")
