@@ -82,6 +82,16 @@ def doubled() -> FakeState:
                 page_count=2,
             )
         )
+    state.workflows.append(
+        Workflow(
+            id=60,
+            name="Plain",
+            order=60,
+            enabled=False,
+            triggers=(WorkflowTrigger(id=60, type=2, settings={}),),
+            actions=(WorkflowAction(id=60, type=1, settings={"assign_tags": [4]}),),
+        )
+    )
     return state
 
 
@@ -328,14 +338,14 @@ def _workflows() -> Iterator[tuple[str, str, Json]]:
         with_it: Json = {"triggers": [trigger], "actions": [ACTION]}
         new: Json = {"name": "New", **with_it}
         yield "create_workflow", f".triggers.{name}", new
-        yield "update_workflow", f".triggers.{name}", {"workflow": "Filing", **with_it}
-        one: Json = {"workflow": "Filing", "operation": "add", "trigger": trigger}
+        yield "update_workflow", f".triggers.{name}", {"workflow": "Plain", **with_it}
+        one: Json = {"workflow": "Plain", "operation": "add", "trigger": trigger}
         yield "update_workflow_part", f".trigger.{name}", one
     for name, action in _actions():
         with_it = {"triggers": [TRIGGER], "actions": [action]}
         yield "create_workflow", f".actions.{name}", {"name": "New", **with_it}
-        yield "update_workflow", f".actions.{name}", {"workflow": "Filing", **with_it}
-        one = {"workflow": "Filing", "operation": "add", "action": action}
+        yield "update_workflow", f".actions.{name}", {"workflow": "Plain", **with_it}
+        one = {"workflow": "Plain", "operation": "add", "action": action}
         yield "update_workflow_part", f".action.{name}", one
     yield "update_workflow", ".workflow", {"workflow": TWIN, "name": "New"}
     yield "delete_workflow", ".workflow", {"workflow": TWIN}

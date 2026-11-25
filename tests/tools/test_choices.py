@@ -5,6 +5,7 @@ Declining cases use a fake that refuses writes, so a write fails the test.
 
 import contextlib
 import copy
+import dataclasses
 import json
 import logging
 import re
@@ -1018,28 +1019,54 @@ def unwritten() -> FastMCP:
     return server(reading())
 
 
+@dataclasses.dataclass
+class Shared:
+    """One server for many calls that write, each on a world of its own."""
+
+    fake: FakePaperless
+    served: FastMCP
+
+    async def call(self, mode: Mode, handler: Handler | None, tool: str, arguments: Json) -> Wrote:
+        self.fake.state = doubled()
+        self.fake.sent_writes = []
+        result = await call(self.served, mode, handler, tool, arguments)
+        return Wrote(result, self.fake.sent_writes)
+
+
+@dataclasses.dataclass
+class Wrote:
+    result: CallToolResult
+    writes: list[tuple[str, tuple[object, ...], dict[str, object]]]
+
+
+@pytest.fixture(scope="module")
+def shared() -> Shared:
+    fake = source(doubled())
+    return Shared(fake, server(fake))
+
+
 @pytest.mark.parametrize(("tool", "place", "arguments"), CASES, ids=_titles(CASES))
 async def test_a_write_tool_asks_and_writes_what_the_call_with_the_id_writes(
-    unwritten: FastMCP, tool: str, place: str, arguments: Json
+    shared: Shared, unwritten: FastMCP, tool: str, place: str, arguments: Json
 ) -> None:
     """On both eras: what is written is compared with the call that names the id."""
     del place
-    oracle, by_number = source(doubled()), picks(SECOND)
-    expected = await call(server(oracle), "auto", by_number.handler, tool, by_id(arguments))
+    by_number = picks(SECOND)
+    expected = await shared.call("auto", by_number.handler, tool, by_id(arguments))
     assert by_number.questions == []
 
     for mode in MODES:
-        fake, shown = source(doubled()), picks(SECOND)
-        result = await call(server(fake), mode, shown.handler, tool, arguments)
+        shown = picks(SECOND)
+        done = await shared.call(mode, shown.handler, tool, arguments)
 
-        assert len(shown.questions) == 1, text(result)
+        assert len(shown.questions) == 1, text(done.result)
         assert shown.confirmations == by_number.confirmations
         if tool == "restore_from_trash":  # a filter restores nothing: it names what it matches
-            assert text(result) == text(expected)
+            assert text(done.result) == text(expected.result)
         else:
-            assert not result.is_error, text(result)
-            assert fake.sent_writes
-        assert fake.sent_writes == oracle.sent_writes
+            assert not done.result.is_error, text(done.result)
+            assert done.writes
+        assert done.writes == expected.writes
 
         plain = await call(unwritten, mode, None, tool, arguments)
         declined = await call(unwritten, mode, picks(None).handler, tool, arguments)
