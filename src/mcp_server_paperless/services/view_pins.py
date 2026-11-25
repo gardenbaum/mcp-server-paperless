@@ -6,12 +6,14 @@ Nothing is ever sent twice.
 """
 
 import asyncio
+import contextlib
 import json
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.errors import (
     Conflict,
     PaperlessMcpError,
+    UnexpectedAnswer,
     UpstreamUnavailable,
     Validation,
     quoted,
@@ -19,7 +21,7 @@ from mcp_server_paperless.domain.errors import (
 from mcp_server_paperless.domain.views import PinnedView
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import AsyncGenerator, Mapping
 
     from pydantic import JsonValue
 
@@ -37,9 +39,11 @@ NOT_READ: Final = (
     "The UI settings could not be read again: whether they were stored as sent is not known."
 )
 NOT_THERE: Final = (
-    "Paperless did not answer the change, and it is not there: whether it will still be stored "
-    "is not known."
+    "The change is not there, but whether it still arrives is not known. If it does, it sets all "
+    "UI settings of this user back to what they were before the call, with the change."
 )
+# Longest wait for another call of this server, in seconds: a call takes three requests.
+MOST_WAIT: Final = 40.0
 
 
 def is_view(entry: JsonValue, view_id: int) -> bool:
@@ -102,12 +106,15 @@ def differing(expected: Settings, found: Settings, within: str = "") -> list[str
 class ViewPins:
     """Reads and writes the pins of the current user."""
 
-    def __init__(self, reader: UiSettingsReader, writer: UiSettingsWriter) -> None:
-        """Read through ``reader``, write through ``writer``."""
+    def __init__(
+        self, reader: UiSettingsReader, writer: UiSettingsWriter, *, wait: float = MOST_WAIT
+    ) -> None:
+        """Read through ``reader``, write through ``writer``; wait ``wait`` seconds for a turn."""
         self._reader: UiSettingsReader = reader
         self._writer: UiSettingsWriter = writer
         # Assistants call tools in parallel: two writes at once would undo each other.
         self._one_at_a_time: asyncio.Lock = asyncio.Lock()
+        self._wait: float = wait
 
     async def settings(self) -> Settings | None:
         """The UI settings to look pins up in; ``None`` where they cannot be read."""
@@ -136,7 +143,7 @@ class ViewPins:
         if not wanted:
             message = "Nothing to change: neither dashboard nor sidebar was named."
             raise Validation(message, hint="Pass dashboard, sidebar or both as true or false.")
-        async with self._one_at_a_time:
+        async with self._turn():
             before = await self._reader.get_ui_settings()
             after = with_pins(before, view.id, wanted)
             changed = any(pinned(before, p, view.id) != shown for p, shown in wanted.items())
@@ -159,20 +166,38 @@ class ViewPins:
             message=f"{'Changed' if changed else 'Nothing to change'}: {state} of this user.",
         )
 
+    @contextlib.asynccontextmanager
+    async def _turn(self) -> AsyncGenerator[None]:
+        """The turn of one call.
+
+        Raises:
+            Conflict: Another call took too long; nothing was changed.
+        """
+        try:
+            async with asyncio.timeout(self._wait):
+                _ = await self._one_at_a_time.acquire()
+        except TimeoutError:
+            message = "Another call is still changing UI settings. Nothing was changed."
+            raise Conflict(message, hint="Call again in a moment.") from None
+        try:
+            yield
+        finally:
+            self._one_at_a_time.release()
+
     async def _write(self, after: Settings, view: SavedView, wanted: Mapping[str, bool]) -> None:
         """Send the settings once and compare them with a fresh read."""
-        lost = False
+        lost = ""
         try:
             await self._writer.replace_ui_settings(after)
-        except UpstreamUnavailable:
-            lost = True
+        except (UpstreamUnavailable, UnexpectedAnswer) as error:
+            lost = f"{error.message} "
         try:
             found = await self._reader.get_ui_settings()
         except PaperlessMcpError:
-            raise PaperlessMcpError(NOT_READ, hint=LOOK) from None
+            raise PaperlessMcpError(lost + NOT_READ, hint=LOOK) from None
         as_asked = all(pinned(found, p, view.id) == shown for p, shown in wanted.items())
         if lost and not as_asked:
-            raise PaperlessMcpError(NOT_THERE, hint=LOOK)
+            raise PaperlessMcpError(lost + NOT_THERE, hint=LOOK)
         names = differing(after, found)
         if not names:
             return

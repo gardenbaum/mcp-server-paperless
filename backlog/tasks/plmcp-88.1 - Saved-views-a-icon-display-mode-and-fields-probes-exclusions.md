@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T10:18:26Z'
-updated_date: '2026-11-25T11:00:00Z'
+updated_date: '2026-11-25T11:12:02Z'
 labels:
   - views
 dependencies: []
@@ -57,4 +57,6 @@ Deliberate: surface and message snapshots; hint of "Nothing to change". Guide li
 just check was not run as a whole locally.
 
 CI run 45596307049 on 65cd16b: live contract (test_views 25) and E2E (test_views 5) green on Paperless 3.5.1.
+
+Review: custom fields only looked up when shown (test), echoed icon and field cut and on one line, contradictory arguments refused before anything is read. Tests first (6 red); 5 mutants, none survived.
 <!-- SECTION:NOTES:END -->

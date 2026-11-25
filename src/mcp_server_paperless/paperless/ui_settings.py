@@ -6,7 +6,7 @@ leaves this module and is never sent back. A POST replaces the whole object, and
 ``settings`` makes every later GET fail (probe P1 of PLMCP-88.1).
 """
 
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Literal
 
 from pydantic import BaseModel, JsonValue
 
@@ -32,6 +32,10 @@ COMPUTED: Final = frozenset(
 
 class _Answer(BaseModel):
     settings: dict[str, JsonValue]
+
+
+class _Done(BaseModel):
+    success: Literal[True]
 
 
 def stored(settings: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
@@ -82,6 +86,6 @@ class PaperlessUiSettingsWriter:
     async def replace_ui_settings(self, settings: Mapping[str, JsonValue]) -> None:
         """See ``UiSettingsWriter.replace_ui_settings``; a POST is never retried."""
         try:
-            _ = await self._client.request("POST", PATH, json={"settings": dict(settings)})
+            _ = await self._client.call("POST", PATH, _Done, json={"settings": dict(settings)})
         except PermissionDenied:
             raise refused(WRITING) from None

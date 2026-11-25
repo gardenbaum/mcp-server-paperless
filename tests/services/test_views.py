@@ -61,6 +61,18 @@ class Recording(FakePaperless):
         super().__init__(state, user=user, allow_writes=writes)
         self.writes: list[str] = []
         self.updates: list[ViewValues] = []
+        self.taxonomy: list[TaxonomyKind] = []
+        self.view_reads: int = 0
+
+    @override
+    async def list_taxonomy(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
+        self.taxonomy.append(kind)
+        return await super().list_taxonomy(kind)
+
+    @override
+    async def list_saved_views(self) -> tuple[SavedView, ...]:
+        self.view_reads += 1
+        return await super().list_saved_views()
 
     @override
     async def create_saved_view(self, name: str, values: ViewValues) -> SavedView:
@@ -717,3 +729,52 @@ async def test_who_may_only_see_a_view_sees_its_grants_and_ids_where_users_are_h
     assert found.access is not None
     assert [who.name for who in found.access.view_users] == ["#3"]
     assert found.can_change is False
+
+
+async def test_custom_fields_are_only_looked_up_if_a_view_shows_one() -> None:
+    setup = Setup()
+    setup.view("e2e-view").display_fields = ("title", "asn")
+
+    _ = await setup.views.list()
+    _ = await setup.views.get(1)
+    assert "custom_field" not in setup.fake.taxonomy
+    setup.view("e2e-view").display_fields = ("title", "custom_field_1")
+    _ = await setup.views.list()
+
+    assert setup.fake.taxonomy.count("custom_field") == 1
+
+
+@pytest.mark.parametrize("wrong", ["x" * 5000, "y\n\u202e" + "z" * 5000])
+async def test_a_wrong_icon_or_field_is_named_in_a_short_line(wrong: str) -> None:
+    setup = Setup(writes=False)
+    specs = (
+        ViewCreate(name="n", icon=wrong),
+        ViewCreate(name="n", display_fields=(wrong,)),
+        ViewCreate(name="n", display_fields=(wrong, wrong)),
+    )
+
+    for spec in specs:
+        with pytest.raises(Validation) as raised:
+            _ = await setup.views.create(spec)
+        assert wrong[:1] in raised.value.message
+        assert len(raised.value.message) < 200
+        assert "\n" not in raised.value.message
+        assert "\u202e" not in raised.value.message
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        ViewEdit(sort_field="title", clear_sort=True),
+        ViewEdit(page_size=5, clear_page_size=True),
+        ViewEdit(display_mode="table", clear_display_mode=True),
+        ViewEdit(display_fields=("title",), clear_display_fields=True),
+    ],
+)
+async def test_a_contradiction_is_refused_before_anything_is_read(edit: ViewEdit) -> None:
+    setup = Setup(writes=False)
+
+    with pytest.raises(Validation, match="contradict"):
+        _ = await setup.views.update("no such view", edit)
+
+    assert setup.fake.view_reads == 0

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T10:18:27Z'
-updated_date: '2026-11-25T11:00:00Z'
+updated_date: '2026-11-25T11:26:17Z'
 labels:
   - views
 dependencies:
@@ -55,4 +55,6 @@ For PLMCP-83: POST /api/ui_settings/ counts as covered in the table; the other s
 just check was not run as a whole locally.
 
 CI run 45598528336 on 7061254: e2e parts green on Paperless 3.5.1 (contract of ui_settings and views, E2E of view_pins over memory, stdio and HTTP).
+
+Review: a refused second read, the texts and foreign answers (redirect, login page) tested and named truly; what a late POST would do is said (NOT_THERE, decision-92); a call waits at most 40 s for another; configuration.md wrapped. Tests first (7 red); 44 mutants, none survives.
 <!-- SECTION:NOTES:END -->
