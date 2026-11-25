@@ -368,7 +368,8 @@ class DocumentEditor:
         }
         for kind, value in references.items():
             if value is not None:
-                found[kind] = (await self._taxonomy.resolve(kind, value)).id
+                role = kind.replace("_", " ")
+                found[kind] = (await self._taxonomy.resolve(kind, value, role=role)).id
         if edit.owner is not None:
             found["owner"] = await self._owner(edit.owner)
         plain = {
@@ -399,7 +400,7 @@ class DocumentEditor:
     async def _owner(self, value: NameOrId) -> int:
         """The user id; an id is checked against the users unless the user may not list them."""
         try:
-            return (await self._taxonomy.resolve("user", value)).id
+            return (await self._taxonomy.resolve("user", value, role="owner")).id
         except PermissionDenied as error:
             if _numeric(value):
                 return int(value)  # Paperless decides
@@ -420,7 +421,8 @@ class DocumentEditor:
             for n in linked(value) - linked(have.get(number))
         }
         removed = {
-            (await self._taxonomy.resolve("custom_field", f)).id for f in edit.remove_custom_fields
+            (await self._taxonomy.resolve("custom_field", f, role="remove custom fields")).id
+            for f in edit.remove_custom_fields
         }
         if sets.keys() & removed:
             message = "A custom field is both set and removed."
@@ -429,12 +431,12 @@ class DocumentEditor:
 
     async def _tags(self, edit: DocumentEdit, current: Current) -> _Tags:
         async def ids(
-            values: Iterable[NameOrId], *, create: bool, adding: bool = True
+            values: Iterable[NameOrId], role: str, *, create: bool, adding: bool = True
         ) -> list[int | str]:
             found: list[int | str] = []
             for value in values:
                 try:
-                    found.append((await self._taxonomy.resolve("tag", value)).id)
+                    found.append((await self._taxonomy.resolve("tag", value, role=role)).id)
                 except NotFound as error:
                     if _numeric(value) or not adding:
                         raise
@@ -448,16 +450,15 @@ class DocumentEditor:
         if not (edit.tags_add or edit.tags_remove or edit.tags_set is not None):
             return _Tags(add=[], remove=[], replace=None, parents={})  # tags are not touched
         create = edit.create_missing_tags
-        removed = [
-            t for t in await ids(edit.tags_remove, create=False, adding=False) if isinstance(t, int)
-        ]
+        taken = await ids(edit.tags_remove, "tags remove", create=False, adding=False)
+        removed = [t for t in taken if isinstance(t, int)]
         items = {t.id: t for t in await self._taxonomy.items("tag")}
         parents = {n: t.parent for n, t in items.items()}
         if edit.tags_set is not None:
-            replace = await ids(edit.tags_set, create=create)
+            replace = await ids(edit.tags_set, "tags set", create=create)
             _check_new_names(replace)
             return _Tags(add=[], remove=removed, replace=replace, parents=parents)
-        added = await ids(edit.tags_add, create=create)
+        added = await ids(edit.tags_add, "tags add", create=create)
         if {t for t in added if isinstance(t, int)} & set(removed):
             message = "A tag is both added and removed."
             raise Validation(message, hint="Name each tag once, in tags_add or in tags_remove.")

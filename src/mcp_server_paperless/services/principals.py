@@ -34,11 +34,15 @@ def is_numeric(value: NameOrId) -> bool:
 
 
 async def resolve_principals(
-    resolver: TaxonomyResolver, kind: PrincipalKind, values: Sequence[NameOrId]
+    resolver: TaxonomyResolver,
+    kind: PrincipalKind,
+    values: Sequence[NameOrId],
+    *,
+    role: str = "",
 ) -> Principals:
     """Ids and quoted names of users or groups, checked against the list the user may see.
 
-    An id is passed on unchecked only when the user may not list that kind.
+    An id is passed on unchecked only when the user may not list that kind. ``role``: see ``pick``.
 
     Raises:
         NotFound: A user or group matches nothing.
@@ -49,7 +53,7 @@ async def resolve_principals(
     names: list[str] = []
     for value in values:
         try:
-            found = await resolver.resolve(kind, value)
+            found = await resolver.resolve(kind, value, role=role)
         except PermissionDenied as error:
             if not is_numeric(value):
                 hint = f"Pass the {kind} id instead of the name."

@@ -459,6 +459,13 @@ def listed(names: Sequence[str], limit: int = 5) -> str:
     return f"{shown} and {rest} more" if rest > 0 else shown
 
 
+def first_of(shown: Sequence[str], limit: int = 5) -> str:
+    """The first ``limit`` texts as they are, then "and N more"."""
+    rest = len(shown) - limit
+    text = ", ".join(shown[:limit])
+    return f"{text} and {rest} more" if rest > 0 else text
+
+
 class AuthenticationFailed(PaperlessMcpError):
     """Paperless rejected the credential (wrong, expired or revoked token)."""
 

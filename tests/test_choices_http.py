@@ -39,7 +39,7 @@ ERROR: Final = (
     "Hint: Pass the id of the one you mean."
 )
 PICK: Final[Json] = {"action": "accept", "content": {"choice": "51"}}
-OPTIONS: Final = {"50": "'Twin' (id 50, 1 document)", "51": "'twin' (id 51, 1 document)"}
+OPTIONS: Final = {"50": "'Twin' (id 50), 1 document", "51": "'twin' (id 51), 1 document"}
 
 rounds = functools.partial(sessionless, tool=TOOL, arguments=CALL, key="choice")
 

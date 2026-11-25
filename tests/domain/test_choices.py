@@ -18,6 +18,7 @@ from mcp_server_paperless.domain.errors import Ambiguous
 pytestmark = pytest.mark.decision("decision-109")
 
 A, B = Choice("1", "'Tax' (id 1)"), Choice("2", "'tax' (id 2)")
+MORE = dataclasses.replace(B, detail="3 documents")
 QUESTION = Question("tags", "TAX", (A, B))
 
 
@@ -26,16 +27,30 @@ QUESTION = Question("tags", "TAX", (A, B))
     [
         dataclasses.replace(QUESTION, what="correspondents"),
         dataclasses.replace(QUESTION, word="tax"),
+        dataclasses.replace(QUESTION, role="parent"),
+        dataclasses.replace(QUESTION, about="7"),
         dataclasses.replace(QUESTION, choices=(A,)),
         dataclasses.replace(QUESTION, choices=(B, A)),
         dataclasses.replace(QUESTION, choices=(A, B, Choice("3", "'TAX' (id 3)"))),
-        dataclasses.replace(QUESTION, choices=(A, Choice("2", "'tax' (id 2, 1 document)"))),
+        dataclasses.replace(QUESTION, choices=(A, Choice("2", "'TAX' (id 2)"))),
         dataclasses.replace(QUESTION, choices=(A, Choice("3", B.title))),
         dataclasses.replace(QUESTION, choices=(A, dataclasses.replace(B, owner=3))),
     ],
 )
 def test_another_word_kind_or_match_is_another_question(other: Question) -> None:
     assert other.fingerprint != QUESTION.fingerprint
+
+
+def test_a_detail_that_changes_is_no_other_question() -> None:
+    """A document is filed while the user is asked: its count says nothing about the match."""
+    assert dataclasses.replace(QUESTION, choices=(A, MORE)).fingerprint == QUESTION.fingerprint
+    assert MORE.shown == "'tax' (id 2), 3 documents"
+    assert B.shown == "'tax' (id 2)"
+
+
+@pytest.mark.parametrize("change", [{"role": "parent"}, {"about": "7"}, {"what": "x"}])
+def test_another_role_or_thing_is_another_topic(change: dict[str, str]) -> None:
+    assert dataclasses.replace(QUESTION, **change).topic != QUESTION.topic
 
 
 def test_words_that_look_alike_when_cut_are_two_questions() -> None:

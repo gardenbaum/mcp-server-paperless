@@ -14,7 +14,7 @@ from mcp_server_paperless.domain.choices import Choice, Question, picking
 from mcp_server_paperless.domain.credentials import PaperlessCredential
 from mcp_server_paperless.domain.errors import Ambiguous, Conflict, NotFound, PermissionDenied
 from mcp_server_paperless.domain.taxonomy import TaxonomyItem
-from mcp_server_paperless.services.taxonomy import TaxonomyResolver, fold, pick
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver, fold, names_apart, pick
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.taxonomy import TaxonomyKind
@@ -377,8 +377,8 @@ def test_an_ambiguous_name_asks_with_the_titled_matches() -> None:
 
     assert (found.what, found.word) == ("correspondents", "Meier")
     assert found.choices == (
-        Choice("4", "'Meier' (id 4, 34 documents)"),
-        Choice("9", "'Meier' (id 9, 1 document)", owner=3),
+        Choice("4", "'Meier' (id 4)", detail="34 documents"),
+        Choice("9", "'Meier' (id 9)", owner=3, detail="1 document"),
     )
     assert [c.title for c in question(DOUBLES, "MEIER").choices][2] == "'meier' (id 5)"
     assert question(DOUBLES, "Meier", "document_type").what == "document types"
@@ -391,7 +391,7 @@ def test_a_title_holds_a_name_only_quoted_cut_and_visible() -> None:
 
     for choice in question(rows, hostile).choices:
         assert choice.title.startswith("'a (id 1)xx")
-        assert choice.title.endswith(f"\u2026' (id {choice.value}, 0 documents)")
+        assert choice.title.endswith(f"\u2026' (id {choice.value})")
         assert len(choice.title) <= 100
 
 
@@ -438,9 +438,33 @@ def test_a_pick_that_is_gone_is_never_replaced_by_what_is_left() -> None:
             _ = pick("correspondent", DOUBLES[:1], "Meier")
         with pytest.raises(Conflict):  # by its name in another case
             _ = pick("correspondent", DOUBLES[2:], "Meier")
-        with pytest.raises(NotFound):
+        with pytest.raises(Conflict):  # nor by nothing, which a caller might create
             _ = pick("correspondent", [], "Meier")
 
     assert raised.value.message == (
         "The correspondent the user picked (id 9) does not match 'Meier' any more."
     )
+
+
+@pytest.mark.decision("decision-109")
+def test_one_word_in_two_roles_is_two_questions() -> None:
+    with pytest.raises(Ambiguous) as raised:
+        _ = pick("correspondent", DOUBLES, "Meier", role="parent")
+    asked = raised.value.question
+    assert asked is not None
+    assert asked.role == "parent"
+
+    with picking([asked.picking("9")]):
+        assert pick("correspondent", DOUBLES, "Meier", role="parent").id == 9
+        with pytest.raises(Ambiguous):
+            _ = pick("correspondent", DOUBLES, "Meier", role="item")
+        assert pick("correspondent", DOUBLES[:1], "Meier", role="item").id == 4
+
+
+@pytest.mark.decision("decision-109")
+def test_names_that_would_be_shown_alike_are_told_apart_by_the_id() -> None:
+    long = [TaxonomyItem(id=n, name="x" * 99 + str(n), document_count=0) for n in (11, 12)]
+    shown = names_apart([*DOUBLES, *long])
+
+    assert [shown[n] for n in (4, 9, 5)] == ["'Meier' (id 4)", "'Meier' (id 9)", "'meier'"]
+    assert [shown[n].endswith(f"' (id {n})") for n in (11, 12)] == [True, True]

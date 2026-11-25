@@ -12,6 +12,7 @@ from mcp_server_paperless.domain.errors import (
     both_ends,
     destination,
     excerpt,
+    first_of,
     listed,
     quoted,
 )
@@ -625,3 +626,9 @@ def test_an_excerpt_escapes_a_mark_that_has_no_letter_to_stand_on() -> None:
     assert excerpt(f"e{chr(0)}{mark}{mark}") == r'"e\u0000\u0301\u0301"'  # not on an escape
     for before in ("", " ", "."):
         assert excerpt(f"{before}{mark}x") == rf'"{before}\u0301x"'
+
+
+def test_the_first_texts_stand_as_they_are_and_the_rest_is_counted() -> None:
+    assert first_of(["a", "b"]) == "a, b"
+    assert first_of(list("abcdef")) == "a, b, c, d, e and 1 more"
+    assert first_of([]) == ""

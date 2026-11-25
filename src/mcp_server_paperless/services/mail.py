@@ -572,7 +572,9 @@ class MailService:
         return info
 
     async def _tag_ids(self, values: Sequence[NameOrId]) -> tuple[int, ...]:
-        ids = [(await self._taxonomy.resolve("tag", value)).id for value in values]
+        ids = [
+            (await self._taxonomy.resolve("tag", value, role="assign tags")).id for value in values
+        ]
         return tuple(dict.fromkeys(ids))
 
     async def _resolved(
@@ -606,11 +608,15 @@ class MailService:
             found["assign_tags"] = await self._tag_ids(settings.assign_tags)
         if settings.assign_correspondent is not None:
             found["assign_correspondent"] = (
-                await self._taxonomy.resolve("correspondent", settings.assign_correspondent)
+                await self._taxonomy.resolve(
+                    "correspondent", settings.assign_correspondent, role="assign correspondent"
+                )
             ).id
         if settings.assign_document_type is not None:
             found["assign_document_type"] = (
-                await self._taxonomy.resolve("document_type", settings.assign_document_type)
+                await self._taxonomy.resolve(
+                    "document_type", settings.assign_document_type, role="assign document type"
+                )
             ).id
         if settings.owner is not None:
             found["owner"] = await owner_id(self._taxonomy, settings.owner)

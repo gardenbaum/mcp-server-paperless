@@ -92,8 +92,8 @@ async def test_the_picked_one_of_two_is_renamed(
         assert not result.is_error, result.content
         [message], [schema] = shown.questions, shown.schemas
         assert f"2 correspondents match '{name}'" in message
-        assert f"'{name}' (id {unowned}, 0 documents)" in str(schema)
-        assert f"'{name}' (id {readers}, 0 documents), owner 'e2e-reader'" in str(schema)
+        assert f"'{name}' (id {unowned}), 0 documents" in str(schema)
+        assert f"'{name}' (id {readers}), 0 documents, owner 'e2e-reader'" in str(schema)
         assert name_of(stack, readers) == f"{name}-new"
         assert name_of(stack, unowned) == name
 
