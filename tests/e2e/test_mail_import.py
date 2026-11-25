@@ -220,7 +220,7 @@ async def test_a_mail_with_two_records_is_blocked_by_either(
     rows = box.records(rule, 2)
     assert {row["uid"] for row in rows} == {uid}
     shown = await record(client, rows[0])
-    assert f"until they are deleted too: {rows[1]['id']} " in str(shown["refetch"])
+    assert f"until they are deleted too: {rows[1]['id']}. " in str(shown["refetch"])
     box.unflag(uid, FLAGGED)
     box.forget(num(rows[0]["id"]))
     assert box.fetch() == 0
@@ -247,6 +247,27 @@ async def test_records_are_listed_in_the_order_asked_for(box: Mailbox, client: C
     assert await listed("-processed") == ["Old", "New"]
     assert await listed("received") == ["Old", "New"]
     assert await listed("-received") == ["New", "Old"]
+
+
+async def test_a_mail_without_attachments_is_imported_itself_again(
+    box: Mailbox, client: Connected
+) -> None:
+    """The mail is queued before its attachments are looked at: SUCCESS and "no consumption"."""
+    rule = box.rule("flag", consumption_scope=3)
+    uid = box.put("Alone")
+
+    assert box.fetch() == 1
+    rows = box.records(rule, 2)
+    assert {row["status"] for row in rows} == {"SUCCESS", "PROCESSED_WO_CONSUMPTION"}
+    assert FLAGGED in box.flags(uid)
+    [empty] = [row for row in rows if row["status"] == "PROCESSED_WO_CONSUMPTION"]
+    assert "the mail itself is imported" in str((await record(client, empty))["refetch"])
+    box.unflag(uid, FLAGGED)
+    box.forget(*(num(row["id"]) for row in rows))
+    assert box.fetch() == 1
+    _ = box.records(rule, 2)
+    assert FLAGGED in box.flags(uid)
+    assert len(box.documents("Alone")) == 2
 
 
 async def test_every_rule_has_a_record_of_its_own_and_skips_what_another_took_in_the_run(
@@ -521,7 +542,7 @@ async def test_a_failed_mail_is_taken_again_after_the_tool_deleted_its_record(
     for text in (str(preview["message"]), asked):
         assert f"{failed['id']} '{box.name} Again'" in text
         assert "takes the mail again" in text
-        assert "then the rule DELETES the mail on the mail server" in text
+        assert "the rule then DELETES the mail on the mail server" in text
     assert "No processed mail 999999 exists" in missing
     assert [row["outcome"] for row in cast("list[Json]", done["mails"])] == ["deleted"]
     assert box.records(rule, 0) == []
