@@ -98,9 +98,9 @@ NOTES: Final[dict[PermissionKind, str]] = {
     ),
     "mail_rule": (
         "Whoever may change a mail rule can make it move or delete mail with the saved password of "
-        "its account, without any right on the account. The owner of a rule owns the documents it "
-        "imports from then on; without an owner every user with the global permission to view "
-        "documents sees them"
+        "its account, without any right on the account. The owner of a rule owns the mails it "
+        "imports whole from then on, and attachments where assign_owner_from_rule is on; without "
+        "an owner every user with the global permission to view documents sees them"
     ),
 }
 # The kinds whose objects are read one by one, so that a call is bounded in time.
@@ -303,9 +303,9 @@ class PermissionService:
                 or groups to resolve a name. If objects before it were changed, the message
                 says so.
         """
+        until = self._clock() + RUN_SECONDS if kind in TIMED else math.inf
         owner, asked = await self._asked(request)
         ids = await self._select(kind, items)
-        until = self._clock() + RUN_SECONDS if kind in TIMED else math.inf
         found = await self._read(kind, ids, until)
         if len(found) != len(ids):
             raise _unseen(kind, [n for n in ids if n not in {row.id for row in found}])
@@ -450,7 +450,7 @@ class PermissionService:
     ) -> str:
         """What became of the grants that were sent with an owner Paperless refused; mostly empty.
 
-        Paperless sets the grants of some kinds before it checks the owner, without a transaction.
+        Paperless can set the grants before it refuses the owner, without a transaction.
         """
         if not (isinstance(error, Validation) and plan.owner_changes and plan.grants_change):
             return ""
@@ -461,6 +461,8 @@ class PermissionService:
             return f"Whether the grants of {name} were set all the same is not known."
         if _normalised(now.permissions) == _normalised(plan.current.permissions):
             return ""
+        if now.owner != plan.current.owner:
+            return f"The owner and the grants of {name} were changed all the same."
         return f"The grants of {name} were set all the same; its owner was not changed."
 
     def _result(

@@ -180,7 +180,7 @@ class Mailbox:
     def records(self, rule: int, count: int | None) -> list[Json]:
         """The records of the rule, newest first, once there are `count` and nothing is running.
 
-        Without a count: at least one, when nothing was running twice in a row.
+        Without a count: at least one, once nothing was running in five looks in a row.
         """
         quiet = 0
 

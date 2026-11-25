@@ -553,26 +553,51 @@ async def test_an_owner_who_is_no_superuser_and_anyone_on_an_unowned_object_may_
 
 @pytest.mark.decision("decision-87")
 @pytest.mark.contract(SET)
-async def test_grants_of_a_rule_are_set_although_its_new_owner_is_refused(
-    backend: Backend, account: int
+@pytest.mark.parametrize("unowned", [True, False])
+async def test_grants_of_a_rule_are_set_when_only_its_unowned_twin_is_refused(
+    backend: Backend,
+    account: int,
+    unowned: bool,  # noqa: FBT001 -- the case
 ) -> None:
-    """Two rules of one owner cannot have the same name; Paperless checks that after the grants."""
+    """Two rules of one owner cannot have the same name: checked first for a user, last for none."""
     ports = backend.admin
     number = await mail_object(backend, "mail_rule", account)
     reader = await user_id(ports, READER[0])
+    owner = None if unowned else reader
     name = (await ports.mail.get_mail_rule(number)).name
     _ = await ports.permission_writes.set_permissions(
-        "mail_rule", number, AccessChange(owner=reader)
+        "mail_rule", number, AccessChange(owner=owner)
     )
     twin = await ports.mail_writes.create_mail_rule(MailRuleValues(name=name, account_id=account))
-    change = AccessChange(owner=reader, permissions=ObjectPermissions(view_users=(reader,)))
+    change = AccessChange(owner=owner, permissions=ObjectPermissions(view_users=(reader,)))
 
     with pytest.raises(Validation):
         _ = await ports.permission_writes.set_permissions("mail_rule", twin.id, change)
 
     [after] = await ports.permissions.get_permissions("mail_rule", [twin.id])
     assert after.owner == twin.owner
-    assert after.permissions.view_users == (reader,)
+    assert after.permissions.view_users == ((reader,) if unowned else ())
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.contract(SET)
+async def test_a_change_grant_on_a_rule_is_enough_to_make_it_delete_mail(
+    backend: Backend, account: int
+) -> None:
+    """Without any right on the account, whose saved password the rule then uses."""
+    name = f"contract-user-{uuid.uuid4().hex[:12]}"
+    user = backend.restricted(frozenset({"view_mailrule", "change_mailrule"}), name=name)
+    rule = await mail_object(backend, "mail_rule", account)
+    grantee = await user_id(backend.admin, name)
+    _ = await backend.admin.permission_writes.set_permissions(
+        "mail_rule", rule, AccessChange(permissions=ObjectPermissions(change_users=(grantee,)))
+    )
+
+    changed = await user.mail_writes.update_mail_rule(rule, MailRuleValues(action="delete"))
+
+    assert (changed.action, changed.account_id) == ("delete", account)
+    with pytest.raises(PermissionDenied):
+        _ = await user.mail.get_mail_account(account)
 
 
 @pytest.mark.contract(SET)

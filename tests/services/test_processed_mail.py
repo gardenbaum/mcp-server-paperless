@@ -1173,3 +1173,14 @@ async def test_the_next_request_is_not_sent_after_forty_seconds(slow: str) -> No
         _ = await service.delete([1], dry_run=False, confirm=True)
 
     assert tuple(sent) == SLOW[: SLOW.index(slow) + 1]
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_deletion_names_the_records_of_the_folder_as_the_rule_writes_it() -> None:
+    setup = Setup()
+    setup.rule(folder="inbox")
+    setup.mail(status="FAILED", folder="INBOX")
+    setup.mail(status="FAILED", folder="inbox")
+    setup.mail(status="FAILED", folder="INBOX")
+
+    assert "kept out by the records 2 with its uid" in (await setup.delete(1, dry_run=True)).message
