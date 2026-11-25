@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:05Z'
-updated_date: '2026-11-25T07:16:57Z'
+updated_date: '2026-11-25T08:03:49Z'
 labels:
   - workflows
 dependencies:
@@ -24,17 +24,17 @@ Second part of PLMCP-87: one trigger or action cannot be changed without resendi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 One trigger or action can be added, changed or removed while the others keep ids, settings and hidden values
-- [ ] #2 Every operation keeps decision-21 and decision-66; removing a part with hidden values is confirmed, also while the workflow is disabled, in update_workflow too
-- [ ] #3 The answer is compared with the plan and a difference or a lost answer is reported, never repeated
-- [ ] #4 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover the writes, refusals and hidden values
+- [x] #1 One trigger or action can be added, changed or removed while the others keep ids, settings and hidden values
+- [x] #2 Every operation keeps decision-21 and decision-66; removing a part with hidden values is confirmed, also while the workflow is disabled, in update_workflow too
+- [x] #3 The answer is compared with the plan and a difference or a lost answer is reported, never repeated
+- [x] #4 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover the writes, refusals and hidden values
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -47,3 +47,12 @@ Second part of PLMCP-87: one trigger or action cannot be changed without resendi
 4. decision-82, coverage, docs, snapshots, guide limit 2943 to 2966 (approved, 23 bytes of 42).
 5. Draft PR stacked on 87.1, one full hosted E2E on the finished head.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented on plmcp-87-2-update-part (PR #159, stacked on #154), decision-82. Red first at adapter, contract, service and tool level; E2E written before its first hosted run. workflow_parts.py 100 % (branches). 42 hand mutants: 7 survived first and were killed by new tests (41 ran; one pattern was absent).
+Full hosted E2E 45569964951 on bb58f15 green: tests/contract/test_workflows.py 31, tests/e2e/test_workflows.py 9, tests/e2e/test_workflow_parts.py 6 passed.
+Deviation: trigger_id/action_id instead of part_id (numbered apart in Paperless). Beyond the design: no rewrite of actions while a kept one is held by another workflow with several actions. decision-82 was created by the CLI in a copy of backlog/ outside the repository, because the CLI here skips to 84 (83 is on the branch of 81.3).
+just check was not run as a whole locally.
+<!-- SECTION:NOTES:END -->
