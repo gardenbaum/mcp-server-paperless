@@ -4,7 +4,6 @@ title: 'Mail b: IMAP server in the E2E stack and the probes'
 status: To Do
 assignee: []
 created_date: '2026-11-24T22:44:55Z'
-updated_date: '2026-11-25T08:20:37Z'
 labels:
   - mail
 dependencies:
@@ -35,9 +34,3 @@ Second part of PLMCP-81, test only: the E2E stack has no IMAP server, so a fetch
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
-
-## Implementation Notes
-
-<!-- SECTION:NOTES:BEGIN -->
-Owner, 2026-11-25: 'Überall wie von dir empfohlen bitte.': the job e2e-imap stays complete at 4 to 5 minutes.
-<!-- SECTION:NOTES:END -->

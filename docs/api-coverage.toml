@@ -537,7 +537,6 @@ date = "2026-11-24"
 source = "backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-run-name-the-version-they-read-and-leave-selections-by-filter-out.md"
 
 [[exclusion]]
-<<<<<<< HEAD
 operation = "GET /api/oauth/callback/"
 quote = "Alle wie empfohlen"
 date = "2026-11-24"
@@ -589,8 +588,8 @@ fields = ["body:set_permissions"]
 quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md"
-||||||| be70a9d
-=======
+
+[[exclusion]]
 operation = "GET /api/workflows/"
 fields = ["query:id", "query:id__in"]
 quote = "Alle wie empfohlen"
@@ -676,4 +675,3 @@ fields = ["body:actions[].email.id", "body:actions[].webhook.id"]
 quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
->>>>>>> origin/main
