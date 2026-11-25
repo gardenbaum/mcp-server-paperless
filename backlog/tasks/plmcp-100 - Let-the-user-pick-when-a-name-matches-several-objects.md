@@ -1,10 +1,11 @@
 ---
 id: PLMCP-100
 title: Let the user pick when a name matches several objects
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T18:44:55Z'
-updated_date: '2026-11-23T18:51:41Z'
+updated_date: '2026-11-25T17:38:06Z'
 labels:
   - tools
 dependencies:
