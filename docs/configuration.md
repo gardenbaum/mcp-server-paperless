@@ -476,7 +476,9 @@ them as seen, and `run_task` starts one. `get_task` of `core` follows one task b
   the server's Paperless user.
 - `acknowledge_tasks` with ids needs no `confirm`; with `all_unacknowledged` it does, after saying
   how many tasks, which newest failures and whose they are, because there is no way back (`dry_run`
-  shows the same). Tasks that come in meanwhile are marked too.
+  shows the same). Without a dialog `confirm` counts only together with the `expected` value that
+  preview names, so a task that came in or ended asks again. Tasks that come in while Paperless
+  does it are marked too.
 - In `get_task_overview` the filters apply to the counts only: Paperless offers none for the
   running tasks and the record by type. The record counts every user's tasks for who may view the
   system status, and says so.

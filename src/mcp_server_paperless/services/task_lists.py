@@ -47,6 +47,11 @@ if TYPE_CHECKING:
 
 # The tasks acknowledging all is about.
 NEW: Final = TaskFilters(acknowledged=False)
+# Instead of CONFIRM_HINT: confirm alone is no yes (decision-94).
+HINT: Final = (
+    "Describe the effect to the user and call the tool again with the same arguments, "
+    "confirm=true and expected={seen} only once they agree."
+)
 NOTHING_CHANGED: Final = "Nothing was changed."
 # Failures a preview names; the rest are counted.
 SHOWN_FAILURES: Final = 10
@@ -90,6 +95,12 @@ def _check_text(field: str, value: str | None) -> None:
     if value is not None and not value.strip():
         message = f"{field} must not be blank."
         raise Validation(message, hint=f"Give some text, or leave {field} out.")
+
+
+def _seen(counts: TaskCounts, newest: Sequence[int]) -> str:
+    """What a preview was about: the counts, then the newest task (0: none any more)."""
+    states = (counts.total, counts.needs_attention, counts.in_progress, counts.completed)
+    return "-".join(map(str, (*states, *(newest or (0,)))))
 
 
 def _done(count: int, more: int = 0) -> Acknowledged:
@@ -245,11 +256,14 @@ class TaskListService:
         all_unacknowledged: bool = False,
         dry_run: bool = False,
         confirm: bool = False,
+        expected: str | None = None,
     ) -> Acknowledged:
-        """Mark tasks as seen: these (database ids), or with ``confirm`` every new one.
+        """Mark tasks as seen: these (database ids), or with a yes every new one.
+
+        ``confirm`` is a yes only to what the preview with the value ``expected`` showed.
 
         Raises:
-            ConfirmationRequired: All of them, and neither ``dry_run`` nor ``confirm``.
+            ConfirmationRequired: All of them, without ``dry_run`` or a yes to them as they are.
             Validation: Not exactly one of both, or an id is listed twice or does not exist.
             PermissionDenied: The user may not change tasks, or view them for the preview.
         """
@@ -257,7 +271,7 @@ class TaskListService:
             message = "Give either task_ids or all_unacknowledged=true."
             raise Validation(message, hint="Ids are in list_tasks (the id field).")
         if task_ids is None:
-            return await self._acknowledge_all(dry_run=dry_run, confirm=confirm)
+            return await self._acknowledge_all(dry_run=dry_run, confirm=confirm, expected=expected)
         if len(set(task_ids)) != len(task_ids):
             message = "A task id is listed twice."
             raise Validation(message, hint="List every id once.")
@@ -269,19 +283,24 @@ class TaskListService:
             return Acknowledged(acknowledged=0, dry_run=True, message=message)
         return _done(await self._writer.acknowledge_tasks(task_ids))
 
-    async def _acknowledge_all(self, *, dry_run: bool, confirm: bool) -> Acknowledged:
+    async def _acknowledge_all(
+        self, *, dry_run: bool, confirm: bool, expected: str | None
+    ) -> Acknowledged:
         before = await self._reader.count_tasks(NEW)
         if not before.total:
             message = "Nothing to do: every task you may see was acknowledged before."
             return Acknowledged(acknowledged=0, dry_run=dry_run, message=message)
-        if dry_run or not confirm:
+        newest = await self._reader.list_tasks(NEW, page=1, page_size=1)
+        seen = _seen(before, [row.id for row in newest.rows])
+        if dry_run:
             effect = await self._effect(before)
-            if dry_run:
-                message = f"{NOTHING_CHANGED} This would {effect}."
-                return Acknowledged(acknowledged=0, dry_run=True, message=message)
-            # The text tells the counts, the scope which task is the newest.
-            newest = await self._reader.list_tasks(NEW, page=1, page_size=1)
-            ConfirmationRequired.require(effect, scope=[row.id for row in newest.rows])
+            how = f"Pass confirm=true and expected={seen} to go ahead."
+            message = f"{NOTHING_CHANGED} This would {effect}. {how}"
+            return Acknowledged(acknowledged=0, dry_run=True, message=message)
+        if not (confirm and expected == seen):
+            effect = await self._effect(before)
+            # A dialog shows the text alone; the value is the way on for a client without one.
+            ConfirmationRequired.require(effect, scope=seen, hint=HINT.format(seen=seen))
         try:
             count = await self._writer.acknowledge_all_tasks()
         except UpstreamUnavailable, UnexpectedAnswer:

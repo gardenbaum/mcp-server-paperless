@@ -52,8 +52,9 @@ async def refused(stack: Stack, tool: str, token: str | None = None, **arguments
 
 def expected(text: str) -> str:
     """The value a preview says confirms it."""
-    [found] = re.findall(r"expected=([0-9-]+)", text)
-    return str(found)
+    found = re.search(r"expected=([0-9-]+)", text)
+    assert found, text
+    return found[1]
 
 
 def tasks(listed: Json) -> dict[str, Json]:
@@ -179,18 +180,15 @@ async def test_all_tasks_are_acknowledged_after_a_preview(stack: Stack) -> None:
     shown = await run(stack, "acknowledge_tasks", all_unacknowledged=True, dry_run=True)
     before = await run(stack, "list_tasks", None, name=title, acknowledged=False)
     alone = await refused(stack, "acknowledge_tasks", all_unacknowledged=True, confirm=True)
+    done: Json = {}
     for _ in range(5):  # a task of Paperless's schedule can come in between
         value = expected(await refused(stack, "acknowledge_tasks", all_unacknowledged=True))
+        arguments: Json = {"all_unacknowledged": True, "confirm": True, "expected": value}
         async with Client(server(stack)) as client:
-            result = await client.call_tool(
-                "acknowledge_tasks",
-                {"all_unacknowledged": True, "confirm": True, "expected": value},
-                raise_on_error=False,
-            )
+            result = await client.call_tool("acknowledge_tasks", arguments, raise_on_error=False)
         if not result.is_error:
+            done = cast("Json", result.structured_content)
             break
-    done = result.structured_content
-    assert done is not None, result.content
     after = await run(stack, "list_tasks", None, name=title, acknowledged=True)
 
     assert f"{title}.pdf"[:40] in text

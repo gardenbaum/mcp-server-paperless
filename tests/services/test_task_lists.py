@@ -7,7 +7,7 @@ Fakes of "nothing may be written" cases are created without `allow_writes`. Seed
 import asyncio
 import re
 from datetime import UTC, datetime, timedelta, timezone
-from typing import TYPE_CHECKING, final, override
+from typing import TYPE_CHECKING, TypedDict, final, override
 
 import pytest
 from fakes.accounts import ADMIN, READER
@@ -325,8 +325,15 @@ def unseen() -> Setup:
     return setup
 
 
+class Confirmed(TypedDict):
+    all_unacknowledged: bool
+    confirm: bool
+    expected: str
+
+
 # What the preview of the tasks of `unseen` ends with: the counts, then the newest task.
 SEEN = "5-2-2-1-5"
+CONFIRMED: Confirmed = {"all_unacknowledged": True, "confirm": True, "expected": SEEN}
 EXPECTED = r"confirm=true and expected=\d+-\d+-\d+-\d+-\d+ "
 
 
@@ -587,7 +594,7 @@ async def test_tasks_that_were_acknowledged_meanwhile_are_confirmed_by_no_value(
     service = Setup.over(Emptied(unseen().state, user=ADMIN[0]))
 
     with pytest.raises(ConfirmationRequired) as raised:
-        _ = await service.acknowledge_tasks(all_unacknowledged=True, confirm=True, expected=SEEN)
+        _ = await service.acknowledge_tasks(**CONFIRMED)
 
     assert raised.value.hint
     assert "expected=5-2-2-1-0 " in raised.value.hint
@@ -612,7 +619,7 @@ async def test_the_result_says_how_many_came_in_between() -> None:
     state = unseen().state
     service = Setup.over(Between(state, user=ADMIN[0], allow_writes=True))
 
-    done = await service.acknowledge_tasks(all_unacknowledged=True, confirm=True, expected=SEEN)
+    done = await service.acknowledge_tasks(**CONFIRMED)
 
     assert done.acknowledged == 7
     assert "At least 2 of them came in after the preview." in done.message

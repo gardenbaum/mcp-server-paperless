@@ -158,7 +158,7 @@ async def get_task_overview(  # noqa: PLR0913 -- one filter each, described for 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["acknowledge_tasks"])
 @boundary
-async def acknowledge_tasks(
+async def acknowledge_tasks(  # noqa: PLR0913 -- what to mark, and how it is confirmed
     ctx: Context,
     task_ids: Annotated[
         list[PositiveId] | None,
@@ -176,17 +176,26 @@ async def acknowledge_tasks(
         bool, Field(description="Only say what would be marked; change nothing.")
     ] = False,
     confirm: Confirm = False,
+    expected: Annotated[
+        str | None,
+        Field(description="With all_unacknowledged and confirm: the preview's expected value."),
+    ] = None,
 ) -> Acknowledged:
     """Mark tasks as seen, e.g. failed ones after you looked at them.
 
     They no longer show as new in the web UI; nothing is deleted, and there is no way back. Ids
     need no confirm. all_unacknowledged does: without it a dialog, or an error for you to show the
-    user, first says how many, the newest failures and whose they are (see confirm). Staff users
-    mark every user's tasks, others their own and those without an owner, also tasks that come in
-    meanwhile. Needs the change_paperlesstask permission.
+    user, first says how many, the newest failures and whose they are (see confirm); without a
+    dialog confirm counts only with the expected value this names. Staff users mark every user's
+    tasks, others their own and those without an owner, also tasks that come in meanwhile. Needs
+    the change_paperlesstask permission.
     """
     return await services(ctx).task_lists.acknowledge_tasks(
-        task_ids, all_unacknowledged=all_unacknowledged, dry_run=dry_run, confirm=confirm
+        task_ids,
+        all_unacknowledged=all_unacknowledged,
+        dry_run=dry_run,
+        confirm=confirm,
+        expected=expected,
     )
 
 
