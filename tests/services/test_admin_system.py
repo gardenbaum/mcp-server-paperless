@@ -22,6 +22,7 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     Validation,
 )
+from mcp_server_paperless.domain.urls import ANSWER_NOT_SHOWN, REST_NOT_SHOWN
 from mcp_server_paperless.services.admin_system import (
     ARCHIVE_NAME,
     MAX_DOCUMENTS,
@@ -429,6 +430,11 @@ async def test_without_the_permission_the_change_is_denied_with_a_hint() -> None
 
 # --- logs
 
+NOTE = (
+    "{} line(s) are not shown in full: they hold or may hold credentials of URLs or an answer to "
+    "a mail login."
+)
+
 
 async def test_the_logs_are_listed() -> None:
     assert (await Setup().service.list_logs()).logs == ("paperless", "mail", "celery")
@@ -436,7 +442,7 @@ async def test_the_logs_are_listed() -> None:
 
 async def test_the_last_lines_of_a_log_are_returned_oldest_first() -> None:
     setup = Setup()
-    setup.state.logs["mail"] = [f"line {n}" for n in range(10)]
+    setup.state.logs["mail"] = ["[2026-11-24 10:00:00,1] x", *(f"line {n}" for n in range(10))]
 
     found = await setup.service.get_log("mail", lines=3)
 
@@ -468,7 +474,34 @@ async def test_log_lines_hold_no_credentials_of_the_urls_paperless_called() -> N
         "[2026-11-24 10:00:00,126] sent to a URL that is not shown",
         "a URL that is not shown",
     )
-    assert found.note == "4 line(s) are shown without the credentials of the URLs in them."
+    assert found.note == NOTE.format(4)
+
+
+@pytest.mark.decision("decision-80")
+async def test_log_lines_hold_no_answer_of_a_mail_server_to_a_login() -> None:
+    setup = Setup()
+    start = "[2026-11-24 10:00:00,123] [ERROR] [paperless_mail] "
+    setup.state.logs["mail"] = [
+        f"{start}Error while authenticating account Work: Data: [b'pa55w0rd']",
+        f"{start}Error while processing mail account Work",
+        '  File "mail.py", line 1, in mailbox_login',
+        "imap_tools.errors.MailboxLoginError: Data: [b'pa55w0rd']",
+        "",
+        "paperless_mail.mail.MailError: Error while authenticating account Work",
+        f"{start}Next",
+    ]
+
+    found = await setup.service.get_log("mail", lines=4)
+
+    assert found.lines == (
+        f"imap_tools.errors.MailboxLoginError: {ANSWER_NOT_SHOWN}",
+        ANSWER_NOT_SHOWN,
+        ANSWER_NOT_SHOWN,
+        f"{start}Next",
+    )
+    assert found.note == NOTE.format(3)
+    whole = await setup.service.get_log("mail", lines=7)
+    assert "pa55w0rd" not in whole.model_dump_json()
 
 
 CUT_SECRET = ["[2026-11-24 10:00:00,1] to https://user:se", "cr", "et@h.example/x", "end"]
@@ -489,7 +522,7 @@ async def test_a_window_that_starts_inside_a_record_shows_no_rest_of_a_password(
     whole = (f"[2026-11-24 10:00:00,1] to {hidden}", hidden, hidden, "end")
     assert found.lines == whole[-lines:]
     assert (found.returned_lines, found.truncated) == (lines, False)
-    note = f"{lines - 1} line(s) are shown without the credentials of the URLs in them."
+    note = NOTE.format(lines - 1)
     assert found.note == (note if lines > 1 else None)
 
 
@@ -500,7 +533,7 @@ async def test_a_record_longer_than_all_that_is_read_shows_no_rest_of_a_password
 
     found = await setup.service.get_log("paperless", lines=3)
 
-    assert found.lines == ("a URL that is not shown", "a URL that is not shown", "end")
+    assert found.lines == (REST_NOT_SHOWN, REST_NOT_SHOWN, REST_NOT_SHOWN)
 
 
 @pytest.mark.decision("decision-66")
@@ -510,7 +543,8 @@ async def test_the_undated_head_of_a_short_log_is_not_shown_either() -> None:
 
     found = await setup.service.get_log("paperless", lines=50)
 
-    assert found.lines == ("a URL that is not shown", "end")
+    assert found.lines == (REST_NOT_SHOWN, REST_NOT_SHOWN)
+    assert found.note == NOTE.format(2)
 
 
 async def test_a_log_without_credentials_has_no_note() -> None:
@@ -519,7 +553,10 @@ async def test_a_log_without_credentials_has_no_note() -> None:
 
 async def test_a_log_over_the_character_limit_keeps_the_newest_lines() -> None:
     setup = Setup()
-    setup.state.logs["mail"] = [f"{n:04d} " + "x" * 995 for n in range(50)]
+    setup.state.logs["mail"] = [
+        "[2026-11-24 10:00:00,1] x",
+        *(f"{n:04d} " + "x" * 995 for n in range(50)),
+    ]
 
     found = await setup.service.get_log("mail", lines=50)
 
@@ -531,7 +568,7 @@ async def test_a_log_over_the_character_limit_keeps_the_newest_lines() -> None:
 
 async def test_a_single_line_over_the_limit_is_cut_from_the_front() -> None:
     setup = Setup()
-    setup.state.logs["mail"] = ["a" * (MAX_LOG_CHARS * 2) + "END"]
+    setup.state.logs["mail"] = ["[2026-11-24 10:00:00,1] " + "a" * (MAX_LOG_CHARS * 2) + "END"]
 
     found = await setup.service.get_log("mail", lines=5)
 

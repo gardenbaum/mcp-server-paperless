@@ -210,14 +210,17 @@ def _stays(message: str) -> Validation:
     return _usage(message, "Change it in the Paperless web UI; it can be moved and removed here.")
 
 
-def _broken(triggers: Sequence[WorkflowTrigger], actions: Sequence[WorkflowAction]) -> str:
-    """Which rule on triggers and actions together is broken ("" if none is)."""
+def _broken(triggers: Sequence[WorkflowTrigger], actions: Sequence[WorkflowAction]) -> list[str]:
+    """Which rules on triggers and actions together are broken."""
     types = {a.type for a in actions}
+    found: list[str] = []
     if REMOTE_OCR in types and all(t.type != CONSUMPTION for t in triggers):
-        return "remote OCR needs a consumption trigger in the workflow."
+        found.append("remote OCR needs a consumption trigger in the workflow.")
     if SUGGEST in types and all(t.type == CONSUMPTION for t in triggers):
-        return "applying AI suggestions needs a trigger other than consumption in the workflow."
-    return ""
+        found.append(
+            "applying AI suggestions needs a trigger other than consumption in the workflow."
+        )
+    return found
 
 
 def _normal(value: JsonValue) -> JsonValue:
@@ -293,6 +296,19 @@ def _differences(plan: _Plan, now: Workflow) -> list[str]:
     ]
 
 
+def _as_is(found: Workflow) -> _Plan:
+    """The plan that changes nothing, to compare with."""
+    return _Plan(
+        found=found,
+        kind="actions",
+        sent=(),
+        triggers=found.triggers,
+        actions=found.actions,
+        lead="",
+        said={},
+    )
+
+
 def _holding(workflows: Sequence[Workflow], found: Workflow, kind: PartKind, number: int) -> str:
     """The other workflows that hold a part, for a message ("" if none does)."""
     others = [
@@ -336,10 +352,10 @@ class WorkflowParts:
             self._keeps_order_elsewhere(workflows, plan)
         else:
             plan = await self._plan_triggers(workflows, found, edit)
-        if (why := _broken(plan.triggers, plan.actions)) and not _broken(
-            found.triggers, found.actions
-        ):
-            raise _usage(why, "Add or keep such a trigger, or remove the action.")
+        before = _broken(found.triggers, found.actions)
+        why = [rule for rule in _broken(plan.triggers, plan.actions) if rule not in before]
+        if why:
+            raise _usage(why[0], "Add or keep such a trigger, or remove the action.")
         self._ask(plan, confirm=confirm)
         return await self._write(plan)
 
@@ -524,6 +540,12 @@ class WorkflowParts:
             if values:
                 kept = as_object(old.settings.get("assign_custom_fields_values"))
                 given["assign_custom_fields_values"] = {**kept, **values}
+            if values and "assign_custom_fields" in edit.clear:
+                message = (
+                    "assign_custom_fields_values adds its fields to assign_custom_fields, which "
+                    "is to be cleared."
+                )
+                raise _usage(message, "Give assign_custom_fields with all fields that remain.")
             if old.type == ASSIGNMENT and values and spec.assign_custom_fields is None:
                 # Paperless writes only the values of fields in assign_custom_fields.
                 held = old.settings.get("assign_custom_fields")
@@ -587,21 +609,35 @@ class WorkflowParts:
             Conflict: Its triggers, actions or whether it is enabled differ from ``found``.
         """
         now = await self._reader.get_workflow(found.id)
-        same = _Plan(
-            found=found,
-            kind="actions",
-            sent=(),
-            triggers=found.triggers,
-            actions=found.actions,
-            lead="",
-            said={},
-        )
-        if now.enabled != found.enabled or _differences(same, now):
+        if now.enabled != found.enabled or _differences(_as_is(found), now):
             message = (
                 f"Nothing was changed: the workflow {quoted(found.name)} (id {found.id}) was "
                 "changed by someone else meanwhile."
             )
             raise Conflict(message, hint="Read it again with get_workflow and decide anew.")
+
+    async def _whole(self, found: Workflow, error: Validation) -> None:
+        """Check that a refused write left the workflow as it was.
+
+        Paperless checks e-mails and webhooks once more while it writes; what it refuses then may
+        come after a part is written.
+
+        Raises:
+            PaperlessMcpError: It differs from ``found``, or cannot be read.
+        """
+        try:
+            now = await self._reader.get_workflow(found.id)
+        except PaperlessMcpError as second:
+            message = (
+                f"{error.message} Reading again failed, so whether a part of it was written is not "
+                f"known: {second.message}"
+            )
+            raise PaperlessMcpError(message, hint=AGAIN) from None
+        if wrong := _differences(_as_is(found), now):
+            message = (
+                f"{error.message} Read again: the workflow was changed in part: {_listed(wrong)}."
+            )
+            raise PaperlessMcpError(message, hint=AGAIN) from None
 
     async def _write(self, plan: _Plan) -> WorkflowInfo:
         """Send the plan once, read the workflow and compare."""
@@ -610,6 +646,8 @@ class WorkflowParts:
         try:
             await self._writer.update_workflow_parts(plan.found.id, plan.kind, plan.sent)
         except PaperlessMcpError as error:
+            if isinstance(error, Validation):
+                await self._whole(plan.found, error)
             if refused(error):
                 raise
             lost = error

@@ -391,7 +391,10 @@ class SystemAdmin:
             kept = ["…" + found[-1][-(MAX_LOG_CHARS - 2) :]]
         start = len(found) - len(kept)
         hidden = sum(new != old for new, old in zip(found[start:], read[start:], strict=True))
-        note = f"{hidden} line(s) are shown without the credentials of the URLs in them."
+        note = (
+            f"{hidden} line(s) are not shown in full: they hold or may hold credentials of URLs "
+            "or an answer to a mail login."
+        )
         return LogExcerpt(
             name=name,
             lines=tuple(kept),

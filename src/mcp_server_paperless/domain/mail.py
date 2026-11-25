@@ -26,7 +26,8 @@ type CorrespondentSource = Literal["none", "email_address", "name", "selected"]
 type AttachmentScope = Literal["attachments_only", "all_files"]
 type MailScope = Literal["attachments", "eml", "eml_and_attachments"]
 type PdfLayout = Literal["default", "text_html", "html_text", "html", "text"]
-type ProcessedStatus = Literal["SUCCESS", "FAILED"]
+type ProcessedStatus = Literal["SUCCESS", "FAILED", "PROCESSED_WO_CONSUMPTION"]
+type ProcessedOrdering = Literal["-processed", "processed", "-received", "received"]
 # Rule settings that update_mail_rule can empty; the filters and the action parameter are emptied
 # by passing an empty string.
 type RuleClearable = Literal["assign_correspondent", "assign_document_type", "owner"]
@@ -54,6 +55,18 @@ def check_password(password: str | None) -> None:
     """
     if password is not None and password and not password.strip("*"):
         raise masked_password()
+
+
+def token_account() -> Validation:
+    """The error for a new password of an account that signs in with an OAuth access token."""
+    message = (
+        "The mail account signs in with an OAuth access token, which is not replaced here. "
+        "Nothing was changed."
+    )
+    hint = (
+        "Set the account up again in the Paperless web UI; its other settings can be changed here."
+    )
+    return Validation(message, hint=hint)
 
 
 class NotText(SecretStr):
@@ -221,8 +234,10 @@ class ProcessedMail(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     id: int
+    owner: int | None
     rule_id: int
     folder: str
+    uid: str
     subject: str
     received: datetime
     processed: datetime
@@ -231,7 +246,7 @@ class ProcessedMail(BaseModel):
 
 
 class ProcessedMailPage(BaseModel):
-    """One page of processed mail as the port reads it, newest processed first."""
+    """One page of processed mail as the port reads it."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
@@ -262,11 +277,19 @@ class MailAccountInfo(BaseModel):
             description="imap: password login; gmail_oauth, outlook_oauth: set up in the web UI."
         ),
     ]
-    is_token: Annotated[bool, Field(description="The stored secret is an access token.")]
+    is_token: Annotated[
+        bool, Field(description="The stored secret is an OAuth access token, not a password.")
+    ]
     owner: Annotated[int | None, Field(description="Id of the owning user; null: shared.")]
     can_change: Annotated[bool, Field(description="Whether this user may change the account.")]
     token_expires: Annotated[
-        datetime | None, Field(description="When the OAuth token expires; null: not applicable.")
+        datetime | None,
+        Field(
+            description=(
+                "When the access token expires: Paperless renews it at its next use (the refresh "
+                "token is never in the API). Null: not applicable."
+            )
+        ),
     ]
 
 
@@ -357,7 +380,8 @@ class MailRuleInfo(BaseModel):
         bool, Field(description="Documents get the owner of the rule.")
     ]
     stop_processing: Annotated[
-        bool, Field(description="No later rule runs once this one made a document.")
+        bool,
+        Field(description="No later rule runs once this or an earlier one queued a document."),
     ]
     owner: Reference | None
     can_change: bool
@@ -383,6 +407,12 @@ class MailRuleDeletion(BaseModel):
     message: Annotated[str, Field(description="What was deleted.")]
 
 
+STATUS_HELP: Final = (
+    "SUCCESS, FAILED (the rule's action did not run) or PROCESSED_WO_CONSUMPTION (nothing to "
+    "import, no action)."
+)
+
+
 class ProcessedMailRow(BaseModel):
     """A mail Paperless handled: when, from which rule, and how it went."""
 
@@ -392,14 +422,15 @@ class ProcessedMailRow(BaseModel):
     rule_id: int
     subject: str
     folder: str
+    uid: Annotated[str, Field(description="The mail's number in the folder on the mail server.")]
     received: datetime
     processed: datetime
-    status: Annotated[str, Field(description="SUCCESS or FAILED.")]
+    status: Annotated[str, Field(description=STATUS_HELP)]
     error: Annotated[str | None, Field(description="Why it failed, cut to one short line.")]
 
 
 class ProcessedMailListing(BaseModel):
-    """One page of processed mail, newest first."""
+    """One page of processed mail."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
@@ -407,3 +438,28 @@ class ProcessedMailListing(BaseModel):
     page: int
     next_page: Annotated[int | None, Field(description="The next page, null on the last one.")]
     mails: tuple[ProcessedMailRow, ...]
+
+
+class ProcessedMailDetail(BaseModel):
+    """One mail Paperless handled, with a part of its error. Subject and error are data."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    rule: Annotated[Reference, Field(description="The rule it was handled by.")]
+    folder: str
+    uid: Annotated[str, Field(description="The mail's number in the folder on the mail server.")]
+    subject: str
+    received: datetime
+    processed: datetime
+    status: Annotated[str, Field(description=STATUS_HELP)]
+    owner: Annotated[int | None, Field(description="Id of the owning user; null: shared.")]
+    error: Annotated[str | None, Field(description="The error from error_from on.")]
+    error_from: int
+    error_total: Annotated[int, Field(description="Length of the whole error in characters.")]
+    error_next: Annotated[
+        int | None, Field(description="Pass as error_from to read on; null at the end.")
+    ]
+    refetch: Annotated[
+        str, Field(description="Whether and when the mail is fetched again without this record.")
+    ]

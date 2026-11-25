@@ -9,7 +9,7 @@ a password uses `PASSWORD` and checks that it appears in no result, message or l
 import logging
 from dataclasses import replace
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, final
+from typing import TYPE_CHECKING, final, override
 
 import pytest
 from fakes.accounts import ADMIN, READER
@@ -33,7 +33,7 @@ from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from mcp_server_paperless.domain.mail import RuleClearable
+    from mcp_server_paperless.domain.mail import MailAccount, ProcessedOrdering, RuleClearable
 
 pytestmark = [
     pytest.mark.anyio,
@@ -502,7 +502,8 @@ async def test_a_confirmed_fetch_is_queued_and_says_where_the_outcome_shows() ->
         "Paperless queued a fetch of the mail of account 'Invoices'. It runs in the background: "
         "new documents appear after consumption (check the Paperless task list) and "
         "list_processed_mail shows "
-        "the mails it handled."
+        "the mails it handled. While another fetch runs, Paperless skips this one without "
+        "an error; then call this again after that one ended."
     )
 
 
@@ -1139,6 +1140,7 @@ async def test_processed_mail_is_listed_as_compact_rows_newest_first() -> None:
         "rule_id",
         "subject",
         "folder",
+        "uid",
         "received",
         "processed",
         "status",
@@ -1153,14 +1155,133 @@ async def test_processed_mail_can_be_filtered_and_paged() -> None:
     for number in range(3):
         setup.processed(first, f"A{number}", processed=DAY.replace(day=10 + number))
     setup.processed(second, "B0", status="FAILED")
+    setup.processed(second, "Empty", status="PROCESSED_WO_CONSUMPTION")
 
     one = await setup.service.list_processed(rule_id=first, status=None, page=1, page_size=2)
     rest = await setup.service.list_processed(rule_id=first, status=None, page=2, page_size=2)
     failed = await setup.service.list_processed(rule_id=None, status="FAILED", page=1, page_size=25)
+    nothing = await setup.service.list_processed(
+        rule_id=None, status="PROCESSED_WO_CONSUMPTION", page=1, page_size=25
+    )
 
     assert (one.count, one.next_page, [m.subject for m in one.mails]) == (3, 2, ["A2", "A1"])
     assert (rest.next_page, [m.subject for m in rest.mails]) == (None, ["A0"])
     assert [m.subject for m in failed.mails] == ["B0"]
+    assert [m.subject for m in nothing.mails] == ["Empty"]
+
+
+async def test_processed_mail_is_listed_in_the_order_asked_for() -> None:
+    setup = Setup()
+    rule = setup.rule(setup.account())
+    setup.processed(rule, "A", received=DAY, processed=DAY.replace(day=13), uid="4")
+    setup.processed(rule, "B", received=DAY.replace(day=11), processed=DAY.replace(day=12))
+
+    async def listed(ordering: ProcessedOrdering) -> list[str]:
+        found = await setup.service.list_processed(
+            rule_id=None, status=None, ordering=ordering, page=1, page_size=25
+        )
+        return [m.subject for m in found.mails]
+
+    assert await listed("-processed") == ["A", "B"]
+    assert await listed("processed") == ["B", "A"]
+    assert await listed("-received") == ["B", "A"]
+    assert await listed("received") == ["A", "B"]
+
+
+# --- OAuth accounts
+
+
+def token_account(setup: Setup) -> int:
+    return setup.account(account_type="gmail_oauth", is_token=True, expiration=DAY)
+
+
+@pytest.mark.decision("decision-79")
+@pytest.mark.parametrize("confirm", [False, True])
+async def test_the_password_of_a_token_account_is_refused_before_anything_is_sent(
+    confirm: bool,  # noqa: FBT001 -- the case
+) -> None:
+    setup = Setup(writes=False)
+    number = token_account(setup)
+
+    with pytest.raises(Validation) as raised:
+        _ = await setup.service.update_account(
+            number, name="New", password=SecretStr(PASSWORD), confirm=confirm
+        )
+
+    assert raised.value.describe() == (
+        "The mail account signs in with an OAuth access token, which is not replaced here. "
+        "Nothing was changed. Hint: Set the account up again in the Paperless web UI; its other "
+        "settings can be changed here."
+    )
+
+
+@pytest.mark.decision("decision-79")
+async def test_an_account_that_becomes_a_token_account_meanwhile_keeps_its_token() -> None:
+    setup = Setup()
+    number = setup.account()
+    [row] = setup.state.mail_accounts
+
+    @final
+    class Turning(FakePaperless):
+        @override
+        async def get_mail_account(self, account_id: int) -> MailAccount:
+            read = await super().get_mail_account(account_id)
+            row.is_token = True
+            return read
+
+    fake = Turning(setup.state, user=ADMIN[0], allow_writes=True)
+    taxonomy = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
+
+    with pytest.raises(Validation, match="OAuth access token"):
+        _ = await MailService(fake, fake, taxonomy, fake).update_account(
+            number, password=SecretStr("another-Passw0rd")
+        )
+
+    assert row.password == PASSWORD
+
+
+@pytest.mark.decision("decision-79")
+async def test_the_other_settings_of_a_token_account_are_changed() -> None:
+    setup = Setup()
+    number = token_account(setup)
+
+    changed = await setup.service.update_account(number, username="me", name="New")
+
+    assert (changed.username, changed.name, changed.is_token) == ("me", "New", True)
+    assert changed.token_expires == DAY
+    assert setup.state.mail_accounts[0].password == PASSWORD
+
+
+@pytest.mark.decision("decision-79")
+async def test_an_account_that_becomes_a_token_account_is_asked_for_again() -> None:
+    setup = Setup(writes=False)
+    number = setup.account()
+
+    async def asked() -> str:
+        with pytest.raises(ConfirmationRequired) as raised:
+            _ = await setup.service.delete_account(number, confirm=False)
+        return raised.value.fingerprint
+
+    before = await asked()
+    setup.state.mail_accounts[0].is_token = True
+
+    assert await asked() != before
+
+
+@pytest.mark.decision("decision-79")
+async def test_moving_a_token_account_says_that_its_access_token_goes_there() -> None:
+    setup = Setup(writes=False)
+    number = token_account(setup)
+
+    with pytest.raises(ConfirmationRequired) as moved:
+        _ = await setup.service.update_account(number, imap_server="evil.example")
+    with pytest.raises(ConfirmationRequired) as plain:
+        _ = await setup.service.update_account(number, imap_security="none")
+
+    said = "Paperless keeps the saved access token and sends it to the new server"
+    assert said in refusal(moved)
+    assert "the access token and the mail then travel as plain text" in refusal(plain)
+    assert "password" not in refusal(moved) + refusal(plain)
 
 
 async def test_a_page_beyond_the_last_one_of_the_processed_mail_is_not_found() -> None:

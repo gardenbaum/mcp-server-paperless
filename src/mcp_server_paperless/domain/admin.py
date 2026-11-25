@@ -396,9 +396,7 @@ class LogExcerpt(BaseModel):
         bool, Field(description="true: older lines were left out to stay within the size limit.")
     ]
     returned_lines: int
-    note: Annotated[
-        str | None, Field(description="Whether lines are shown without credentials of URLs.")
-    ] = None
+    note: Annotated[str | None, Field(description="Whether lines are not shown in full.")] = None
 
 
 class TaskList(BaseModel):

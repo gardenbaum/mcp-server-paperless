@@ -2,7 +2,7 @@
 
 <!-- Generated from the tool surface by `just docs-tools`. Do not edit by hand. -->
 
-101 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
+102 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
 default; the others are switched on with
 [`PAPERLESS_MCP_TOOLSETS`](configuration.md#toolsets), which also says what each toolset is for.
 
@@ -91,7 +91,8 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | `create_mail_rule` | write, confirm | Create a rule that turns the attachments of matching mails into documents. |
 | `update_mail_rule` | write, confirm | Change a mail rule; only what you pass changes, and what is already so is not written. |
 | `delete_mail_rule` | destructive, confirm | Delete a mail rule and the records of the mail it processed. |
-| `list_processed_mail` | read | List the mails Paperless handled, newest first, as compact rows. |
+| `list_processed_mail` | read | List the mails Paperless handled, as compact rows. |
+| `get_processed_mail` | read | Read one mail Paperless handled, with its whole error. |
 
 ## `pdf`
 

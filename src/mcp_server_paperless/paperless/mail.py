@@ -47,10 +47,12 @@ from mcp_server_paperless.domain.mail import (
     PdfLayout,
     ProcessedMail,
     ProcessedMailPage,
+    ProcessedOrdering,
     ProcessedStatus,
     RuleAction,
     TitleSource,
     check_password,
+    token_account,
 )
 from mcp_server_paperless.domain.urls import text_without_credentials
 from mcp_server_paperless.paperless.pagination import MAX_ITEMS, Page, collect
@@ -150,8 +152,10 @@ class _RuleRow(BaseModel):
 
 class _ProcessedRow(BaseModel):
     id: int
+    owner: int | None
     rule: int
     folder: str
+    uid: str
     subject: str
     received: datetime
     processed: datetime
@@ -177,6 +181,12 @@ def unseen_rule(rule_id: int) -> NotFound:
     """The error for a mail rule that does not exist or that the user may not see."""
     message = f"No mail rule {rule_id} exists that this user may see."
     return NotFound(message, hint="Call list_mail_rules to see the rules you can use.")
+
+
+def unseen_processed(mail_id: int) -> NotFound:
+    """The error for a processed mail that does not exist or that the user may not see."""
+    message = f"No processed mail {mail_id} exists that this user may see."
+    return NotFound(message, hint="Call list_processed_mail to see the records you can use.")
 
 
 def beyond_last_page(page: int) -> NotFound:
@@ -280,8 +290,10 @@ def _rule(row: _RuleRow) -> MailRule:
 def _processed(row: _ProcessedRow) -> ProcessedMail:
     return ProcessedMail(
         id=row.id,
+        owner=row.owner,
         rule_id=row.rule,
         folder=row.folder,
+        uid=row.uid,
         subject=row.subject,
         received=row.received,
         processed=row.processed,
@@ -386,13 +398,19 @@ class PaperlessMailReader:
             raise unseen_rule(rule_id) from None
 
     async def list_processed_mail(
-        self, *, rule_id: int | None, status: ProcessedStatus | None, page: int, page_size: int
+        self,
+        *,
+        rule_id: int | None,
+        status: ProcessedStatus | None,
+        ordering: ProcessedOrdering,
+        page: int,
+        page_size: int,
     ) -> ProcessedMailPage:
         """See ``MailReader.list_processed_mail``."""
         params: dict[str, str | int] = {
             "page": page,
             "page_size": page_size,
-            "ordering": "-processed",
+            "ordering": ordering,
         }
         if rule_id is not None:
             params["rule"] = rule_id
@@ -407,6 +425,13 @@ class PaperlessMailReader:
             next_page=found.next_page,
             mails=tuple(_processed(row) for row in found.results),
         )
+
+    async def get_processed_mail(self, mail_id: int) -> ProcessedMail:
+        """See ``MailReader.get_processed_mail``."""
+        try:
+            return _processed(await self._client.get(f"{PROCESSED}{mail_id}/", _ProcessedRow))
+        except NotFound:
+            raise unseen_processed(mail_id) from None
 
 
 class PaperlessMailWriter:
@@ -430,6 +455,8 @@ class PaperlessMailWriter:
     async def update_mail_account(self, account_id: int, values: MailAccountValues) -> MailAccount:
         """See ``MailWriter.update_mail_account``."""
         body = _account_body(values)
+        if "password" in body and (await self._row(account_id)).is_token:
+            raise token_account()
         try:
             row = await self._client.call(
                 "PATCH", f"{ACCOUNTS}{account_id}/", _AccountRow, json=body

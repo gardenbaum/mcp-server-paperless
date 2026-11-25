@@ -5,6 +5,7 @@ import time
 import pytest
 
 from mcp_server_paperless.domain.urls import (
+    REST_NOT_SHOWN,
     URL_NOT_SHOWN,
     lines_without_credentials,
     shown_url,
@@ -289,11 +290,11 @@ DATED = "[2026-11-24 10:00:00,123] [INFO] by a@b"
 @pytest.mark.parametrize(
     ("lines", "shown"),
     [
-        (["x p", "q@h/x ok", "z", DATED], [URL_NOT_SHOWN, URL_NOT_SHOWN, "z", DATED]),
-        (["a@b", "c", "d%40e", "z"], [*[URL_NOT_SHOWN] * 3, "z"]),
-        (["x\ny", "q\uff20h"], [f"{URL_NOT_SHOWN}\n{URL_NOT_SHOWN}", URL_NOT_SHOWN]),
-        (["q@h", "see https://h/x", "z"], [URL_NOT_SHOWN, "see https://h/x", "z"]),
-        (["x", "https://h/x", DATED], ["x", "https://h/x", DATED]),
+        (["x p", "q@h/x ok", "z", DATED], [*[REST_NOT_SHOWN] * 3, DATED]),
+        (["a@b", "c", "d%40e", "z"], [REST_NOT_SHOWN] * 4),
+        (["x\ny", "q\uff20h"], [f"{REST_NOT_SHOWN}\n{REST_NOT_SHOWN}", REST_NOT_SHOWN]),
+        (["q@h", "see https://h/x", "z"], [REST_NOT_SHOWN] * 3),
+        (["x", "https://h/x", DATED], [REST_NOT_SHOWN, REST_NOT_SHOWN, DATED]),
         ([DATED, "a@b"], [DATED, "a@b"]),
         ([], []),
     ],

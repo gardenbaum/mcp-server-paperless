@@ -7,6 +7,7 @@ write guard), so `paperless.py` does not grow further.
   owner. Every action needs the global permission of the model (`view_mailaccount`, ...).
 - The fake never holds a password anywhere a port can read it: `FakeMailAccount.password` is read
   by `test_account` only, and no row built from an account has a password field.
+- The password of an account with an OAuth access token is refused, like the adapter does.
 - A password of asterisks only is refused like the adapter does (Paperless would ignore it).
 - The mail server is imaginary: a login works if `MailData.logins` holds (server, port, user,
   password); a host in `hosts` answers but rejects other logins (400 in Paperless); a host in
@@ -31,6 +32,7 @@ from mcp_server_paperless.domain.mail import (
     ProcessedMail,
     ProcessedMailPage,
     check_password,
+    token_account,
 )
 from mcp_server_paperless.paperless.mail import (
     beyond_last_page,
@@ -39,6 +41,7 @@ from mcp_server_paperless.paperless.mail import (
     silent_server,
     unreachable_server,
     unseen_account,
+    unseen_processed,
     unseen_rule,
 )
 
@@ -54,6 +57,7 @@ if TYPE_CHECKING:
         MailRuleValues,
         MailScope,
         PdfLayout,
+        ProcessedOrdering,
         ProcessedStatus,
         RuleAction,
         TitleSource,
@@ -121,6 +125,7 @@ class FakeProcessedMail:
     rule: int
     subject: str
     folder: str = "INBOX"
+    uid: str = "1"
     received: datetime = NOW
     processed: datetime = NOW
     status: str = "SUCCESS"
@@ -266,16 +271,32 @@ def get_rule(data: MailData, user: Viewer, rule_id: int) -> MailRule:
     return _rule(_own_rule(data, user, rule_id), user)
 
 
+def _processed(row: FakeProcessedMail) -> ProcessedMail:
+    return ProcessedMail(
+        id=row.id,
+        owner=row.owner,
+        rule_id=row.rule,
+        folder=row.folder,
+        uid=row.uid,
+        subject=row.subject,
+        received=row.received,
+        processed=row.processed,
+        status=row.status,
+        error=row.error,
+    )
+
+
 def list_processed(  # noqa: PLR0913 -- the port's signature
     data: MailData,
     user: Viewer,
     *,
     rule_id: int | None,
     status: ProcessedStatus | None,
+    ordering: ProcessedOrdering,
     page: int,
     page_size: int,
 ) -> ProcessedMailPage:
-    """`MailReader.list_processed_mail` (ProcessedMailViewSet list, newest processed first)."""
+    """`MailReader.list_processed_mail` (ProcessedMailViewSet list)."""
     _allow(user, "view", "processedmail")
     rows = [
         r
@@ -284,7 +305,11 @@ def list_processed(  # noqa: PLR0913 -- the port's signature
         and rule_id in {None, r.rule}
         and (status is None or r.status == status)
     ]
-    rows.sort(key=lambda r: (r.processed, r.id), reverse=True)
+    field_name = ordering.removeprefix("-")
+    rows.sort(
+        key=lambda r: (r.processed if field_name == "processed" else r.received, r.id),
+        reverse=ordering.startswith("-"),
+    )
     start = (page - 1) * page_size
     if page > 1 and start >= len(rows):
         raise beyond_last_page(page)
@@ -292,20 +317,17 @@ def list_processed(  # noqa: PLR0913 -- the port's signature
     return ProcessedMailPage(
         count=len(rows),
         next_page=page + 1 if start + page_size < len(rows) else None,
-        mails=tuple(
-            ProcessedMail(
-                id=r.id,
-                rule_id=r.rule,
-                folder=r.folder,
-                subject=r.subject,
-                received=r.received,
-                processed=r.processed,
-                status=r.status,
-                error=r.error,
-            )
-            for r in shown
-        ),
+        mails=tuple(_processed(r) for r in shown),
     )
+
+
+def get_processed(data: MailData, user: Viewer, mail_id: int) -> ProcessedMail:
+    """`MailReader.get_processed_mail` (ProcessedMailViewSet retrieve)."""
+    _allow(user, "view", "processedmail")
+    found = [r for r in data.processed if r.id == mail_id and _visible(r.owner, user)]
+    if not found:
+        raise unseen_processed(mail_id)
+    return _processed(found[0])
 
 
 def create_account(data: MailData, user: Viewer, values: MailAccountValues) -> MailAccount:
@@ -354,6 +376,8 @@ def update_account(
         raise denied()
     if values.password is not None:
         check_password(values.password.get_secret_value())
+        if row.is_token:
+            raise token_account()
     if values.name is not None and any(
         r.name == values.name and r.id != account_id for r in data.accounts
     ):

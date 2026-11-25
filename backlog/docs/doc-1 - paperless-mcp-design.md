@@ -3,7 +3,7 @@ id: doc-1
 title: paperless-mcp design
 type: specification
 created_date: '2026-11-09T19:21:00Z'
-updated_date: '2026-11-24T18:36:20Z'
+updated_date: '2026-11-24T23:00:45Z'
 ---
 # mcp-server-paperless — Design
 
@@ -253,7 +253,7 @@ Names are indicative; the builder finalises parameters within §5.5. "Phase" ref
 | sharing | share links list/create/delete · share-link bundles list/create/rebuild/delete · `email_documents` | M3 |
 | trash | `list_trash` (filters) · `get_trash_entry` · `get_trashed_file` · `restore_from_trash` · `empty_trash` (explicit ids, a filter that only shows, or `all=true`; confirm: decision-54, decision-55) | M3 |
 | permissions | `set_permissions` (documents and taxonomy; owner, view/change users/groups; merge or replace) · `list_users` · `list_groups` | M3 |
-| mail | mail accounts list/get/create/update/delete/test/process (passwords write-only, never returned) · mail rules CRUD · `list_processed_mail` | M4 |
+| mail | mail accounts list/get/create/update/delete/test/process (passwords write-only, never returned) · mail rules CRUD · `list_processed_mail` · `get_processed_mail` (decision-79, decision-80) | M4 |
 | workflows | workflows list/get/create/update/delete (triggers and actions nested) · `run_workflow` (by hand, on up to 100 documents by ids, filters or view; always confirmed with every document and action: decision-75) | M4 |
 | admin | users CRUD · groups CRUD · application config get/update · logs list/get · tasks list/acknowledge/run (e.g. classifier training, sanity check) · `bulk_download` (ZIP: whole, in parts, or saved over stdio: decision-45) | M4 |
 | raw (off) | `paperless_api_get(path, params)` — read-only GET under `/api/`, size-capped, for anything not covered | M4 |

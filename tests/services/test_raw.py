@@ -936,7 +936,7 @@ async def test_the_urls_of_webhooks_lose_their_credentials_and_the_result_says_s
     assert result.redacted == 3
     assert result.note == (
         "1 secret value(s) were replaced with [redacted]. "
-        "2 URL(s) or log line(s) are shown without credentials."
+        "2 URL(s), error(s) or log line(s) are shown without credentials."
     )
 
 
@@ -967,7 +967,7 @@ async def test_log_lines_lose_the_credentials_of_the_urls_in_them() -> None:
     ("body", "shown"),
     [
         ("[2026-11-24 10:00:00,1] to https://user:pw@h", "[2026-11-24 10:00:00,1] to https://h"),
-        ("pw@h", "a URL that is not shown"),
+        ("pw@h", "(rest of a log record not shown)"),
         ({"redis_url": "redis://user:pw@h:6379/0"}, {"redis_url": "redis://h:6379/0"}),
         ({"webhook": "https://user:pw@h"}, {"webhook": "https://h"}),
         (
@@ -1012,6 +1012,25 @@ async def test_a_cut_answer_has_no_credentials_either() -> None:
     assert "shown without credentials" in str(result.note)
 
 
+@pytest.mark.decision("decision-80")
+async def test_errors_and_log_lines_hold_no_answer_of_a_mail_server_to_a_login() -> None:
+    error = (
+        '  File "mail.py", line 1, in mailbox_login\n'
+        "imaplib.IMAP4.error: NO pa55w0rd\n\npaperless_mail.mail.MailError: x"
+    )
+    line = "[2026-11-24 10:00:00,1] Error while authenticating account A: NO pa55w0rd"
+
+    mails = await RawApiService(Recording(json_reply({"results": [{"error": error}]}))).get(
+        "/api/processed_mail/", {}
+    )
+    log = await RawApiService(Recording(json_reply([line]))).get("/api/logs/mail/", {})
+
+    for result in (mails, log):
+        assert "pa55w0rd" not in result.model_dump_json()
+        assert "(answer of the mail server not shown)" in result.model_dump_json()
+        assert result.redacted == 1
+
+
 @pytest.mark.decision("decision-66")
 @pytest.mark.parametrize("params", [{"limit": 3}, {"limit": 2}, {}])
 async def test_the_rest_of_a_record_at_the_top_of_a_log_is_not_shown(
@@ -1021,7 +1040,10 @@ async def test_the_rest_of_a_record_at_the_top_of_a_log_is_not_shown(
 
     result = await RawApiService(Recording(reply)).get("/api/logs/mail/", params)
 
-    assert result.data == ["a URL that is not shown", "[2026-11-24 10:00:00,1] by a@b"]
+    assert result.data == [
+        "(rest of a log record not shown)",
+        "[2026-11-24 10:00:00,1] by a@b",
+    ]
 
 
 @pytest.mark.decision("decision-66")

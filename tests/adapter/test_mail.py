@@ -21,6 +21,7 @@ from mcp_server_paperless.domain.mail import (
     MailAccountValues,
     MailRule,
     MailRuleValues,
+    ProcessedMail,
 )
 from mcp_server_paperless.paperless.mail import (
     TEST_TIMEOUT,
@@ -143,6 +144,19 @@ PROCESSED_WIRE: Json = {
     "status": "FAILED",
     "error": "boom",
 }
+
+PROCESSED = ProcessedMail(
+    id=9,
+    owner=2,
+    rule_id=7,
+    folder="INBOX",
+    uid="1234",
+    subject="Your invoice",
+    received=datetime(2026, 11, 10, 8, tzinfo=UTC),
+    processed=datetime(2026, 11, 10, 8, 10, 0, 123456, tzinfo=UTC),
+    status="FAILED",
+    error="boom",
+)
 
 
 class Recording:
@@ -298,18 +312,12 @@ async def test_processed_mail_is_listed_newest_first_with_its_filters(
     server = Recording(page(PROCESSED_WIRE, count=31, next_link="http://paperless.test/?page=3"))
 
     found = await PaperlessMailReader(make_client(server)).list_processed_mail(
-        rule_id=7, status="FAILED", page=2, page_size=10
+        rule_id=7, status="FAILED", ordering="received", page=2, page_size=10
     )
 
     assert (found.count, found.next_page) == (31, 3)
     [mail] = found.mails
-    assert (mail.id, mail.rule_id, mail.subject, mail.status, mail.error) == (
-        9,
-        7,
-        "Your invoice",
-        "FAILED",
-        "boom",
-    )
+    assert mail == PROCESSED
     assert server.sent == [
         (
             "GET",
@@ -318,7 +326,7 @@ async def test_processed_mail_is_listed_newest_first_with_its_filters(
             {
                 "page": "2",
                 "page_size": "10",
-                "ordering": "-processed",
+                "ordering": "received",
                 "rule": "7",
                 "status": "FAILED",
             },
@@ -330,7 +338,7 @@ async def test_processed_mail_without_filters_sends_none(make_client: ClientFact
     server = Recording(page({**PROCESSED_WIRE, "error": ""}))
 
     found = await PaperlessMailReader(make_client(server)).list_processed_mail(
-        rule_id=None, status=None, page=1, page_size=25
+        rule_id=None, status=None, ordering="-processed", page=1, page_size=25
     )
 
     assert found.mails[0].error is None
@@ -344,10 +352,82 @@ async def test_the_error_of_a_processed_mail_holds_no_credentials_of_a_url(
     server = Recording(page({**PROCESSED_WIRE, "error": "to https://user:pw@h.example/x"}))
 
     found = await PaperlessMailReader(make_client(server)).list_processed_mail(
-        rule_id=None, status=None, page=1, page_size=25
+        rule_id=None, status=None, ordering="-processed", page=1, page_size=25
     )
 
     assert found.mails[0].error == "to https://h.example/x"
+
+
+@pytest.mark.decision("decision-80")
+async def test_the_error_of_a_processed_mail_holds_no_answer_to_a_login(
+    make_client: ClientFactory,
+) -> None:
+    error = (
+        'File "mail.py", line 1, in mailbox_login\n'
+        f"imaplib.IMAP4.error: NO {PASSWORD} https://u:{PASSWORD}@h/x"
+    )
+    wire = {**PROCESSED_WIRE, "error": error}
+    reader = PaperlessMailReader(make_client(Recording(ok(wire), page(wire))))
+
+    one = await reader.get_processed_mail(9)
+    listed = await reader.list_processed_mail(
+        rule_id=None, status=None, ordering="-processed", page=1, page_size=25
+    )
+
+    assert one.error == (
+        'File "mail.py", line 1, in mailbox_login\n'
+        "imaplib.IMAP4.error: (answer of the mail server not shown)"
+    )
+    assert listed.mails == (one,)
+
+
+async def test_one_processed_mail_is_read_by_id(make_client: ClientFactory) -> None:
+    server = Recording(ok(PROCESSED_WIRE))
+
+    assert await PaperlessMailReader(make_client(server)).get_processed_mail(9) == PROCESSED
+    assert server.sent == [("GET", "/api/processed_mail/9/", None, {})]
+
+
+async def test_a_processed_mail_that_does_not_exist_is_not_found(
+    make_client: ClientFactory,
+) -> None:
+    server = Recording(httpx2.Response(404, json={"detail": "No ProcessedMail matches."}))
+
+    with pytest.raises(NotFound) as raised:
+        _ = await PaperlessMailReader(make_client(server)).get_processed_mail(99)
+
+    assert raised.value.describe() == (
+        "No processed mail 99 exists that this user may see. "
+        "Hint: Call list_processed_mail to see the records you can use."
+    )
+
+
+async def test_the_password_of_a_token_account_is_never_sent(make_client: ClientFactory) -> None:
+    server = Recording(ok({**ACCOUNT_WIRE, "is_token": True}))
+    values = MailAccountValues(name="New", password=SecretStr(PASSWORD))
+
+    with pytest.raises(Validation) as raised:
+        _ = await PaperlessMailWriter(make_client(server)).update_mail_account(1, values)
+
+    assert [sent[0] for sent in server.sent] == ["GET"]
+    assert PASSWORD not in raised.value.describe()
+    assert raised.value.describe() == (
+        "The mail account signs in with an OAuth access token, which is not replaced here. "
+        "Nothing was changed. "
+        "Hint: Set the account up again in the Paperless web UI; its other settings can be "
+        "changed here."
+    )
+
+
+async def test_other_settings_of_a_token_account_are_sent_without_the_token(
+    make_client: ClientFactory,
+) -> None:
+    server = Recording(ok({**ACCOUNT_WIRE, "is_token": True}))
+    values = MailAccountValues(username="me@example.com")
+
+    _ = await PaperlessMailWriter(make_client(server)).update_mail_account(1, values)
+
+    assert server.sent == [("PATCH", "/api/mail_accounts/1/", {"username": "me@example.com"}, {})]
 
 
 async def test_a_page_beyond_the_last_one_is_not_found(make_client: ClientFactory) -> None:
@@ -355,7 +435,7 @@ async def test_a_page_beyond_the_last_one_is_not_found(make_client: ClientFactor
 
     with pytest.raises(NotFound) as raised:
         _ = await PaperlessMailReader(make_client(server)).list_processed_mail(
-            rule_id=None, status=None, page=9, page_size=25
+            rule_id=None, status=None, ordering="-processed", page=9, page_size=25
         )
 
     assert raised.value.message == "Page 9 of the processed mail does not exist."
@@ -420,13 +500,14 @@ async def test_an_update_sends_only_what_is_set_and_keeps_the_password(
 
 
 async def test_a_new_password_is_sent_on_an_update(make_client: ClientFactory) -> None:
-    server = Recording(ok(ACCOUNT_WIRE))
+    server = Recording(ok(ACCOUNT_WIRE), ok(ACCOUNT_WIRE))
 
     _ = await PaperlessMailWriter(make_client(server)).update_mail_account(
         1, MailAccountValues(password=SecretStr(PASSWORD))
     )
 
-    assert server.sent[0][2] == {"password": PASSWORD}
+    assert [sent[0] for sent in server.sent] == ["GET", "PATCH"]
+    assert server.sent[1][2] == {"password": PASSWORD}
 
 
 @pytest.mark.parametrize("password", ["*", "*****"])
@@ -448,13 +529,14 @@ async def test_a_password_of_asterisks_is_refused_because_paperless_would_ignore
 async def test_a_password_with_an_asterisk_among_other_characters_is_sent(
     make_client: ClientFactory,
 ) -> None:
-    server = Recording(ok(ACCOUNT_WIRE))
+    server = Recording(ok(ACCOUNT_WIRE), ok(ACCOUNT_WIRE))
 
     _ = await PaperlessMailWriter(make_client(server)).update_mail_account(
         1, MailAccountValues(password=SecretStr("a*"))
     )
 
-    assert server.sent[0][2] == {"password": "a*"}
+    assert [sent[0] for sent in server.sent] == ["GET", "PATCH"]
+    assert server.sent[1][2] == {"password": "a*"}
 
 
 async def test_a_rejected_account_names_the_field_but_never_the_value(
@@ -991,7 +1073,7 @@ async def test_a_page_past_the_end_of_the_processed_mail_has_its_exact_texts(
 
     with pytest.raises(NotFound) as raised:
         _ = await PaperlessMailReader(make_client(server)).list_processed_mail(
-            rule_id=None, status=None, page=9, page_size=25
+            rule_id=None, status=None, ordering="-processed", page=9, page_size=25
         )
 
     assert raised.value.describe() == (
