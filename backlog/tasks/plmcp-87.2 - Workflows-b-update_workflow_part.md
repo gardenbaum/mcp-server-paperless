@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:05Z'
-updated_date: '2026-11-25T08:03:49Z'
+updated_date: '2026-11-25T08:22:13Z'
 labels:
   - workflows
 dependencies:
@@ -55,4 +55,6 @@ Implemented on plmcp-87-2-update-part (PR #159, stacked on #154), decision-82. R
 Full hosted E2E 45569964951 on bb58f15 green: tests/contract/test_workflows.py 31, tests/e2e/test_workflows.py 9, tests/e2e/test_workflow_parts.py 6 passed.
 Deviation: trigger_id/action_id instead of part_id (numbered apart in Paperless). Beyond the design: no rewrite of actions while a kept one is held by another workflow with several actions. decision-82 was created by the CLI in a copy of backlog/ outside the repository, because the CLI here skips to 84 (83 is on the branch of 81.3).
 just check was not run as a whole locally.
+
+Owner, 2026-11-25: 'Überall wie von dir empfohlen bitte.' (everywhere as you recommend, please): asking also on disabled workflows, the order rule for shared actions and an invalid stored trigger blocking the others stay as built (decision-82).
 <!-- SECTION:NOTES:END -->
