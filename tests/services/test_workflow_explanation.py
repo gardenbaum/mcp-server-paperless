@@ -1118,7 +1118,9 @@ async def test_a_query_paperless_did_not_judge_is_unknown() -> None:
         setup = Setup()
         setup.fake.search_error = error
         [check] = await setup.checks(trigger(filter_custom_field_query='["a","exists",true]'))
+        named = [t for t in (await setup.explain()).not_checked if "custom field query" in t]
         assert check.result == result, error
+        assert bool(named) == (result == "unknown"), error
 
 
 @pytest.mark.parametrize("query", ["null", "true", "3", '"x"', "{}", "[]"])

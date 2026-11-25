@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:07Z'
-updated_date: '2026-11-25T10:37:49Z'
+updated_date: '2026-11-25T11:07:57Z'
 labels:
   - workflows
 dependencies:
@@ -52,4 +52,8 @@ Shared helper for 81d: services/log_records.py.
 Full hosted E2E 45588369857 on 87f27da: e2e test_workflows 11 (explain_workflow for a run, a non-matching and a later workflow, restricted user), contract, stdio and parts green. Afterwards: records count only with logger and whole text (review of 81d), tests red first; log_records.py is a copy of 81d's, which owns it.
 
 Independent review of #161 (2cb483c): H1, H2, M1 to M7, L1 to L4, L6, L7 fixed, tests first (red). did_run is likely, never yes. 39 further hand mutants: one survived, equivalent (other errors are raised again). L5, L8 and L9 were not described. log_records.py and its test are those of PLMCP-81.4 (9d55a71).
+
+Owner, 2026-11-25, question dialog: 'Ja, alles (Recommended)' (yes, everything (recommended)): likely instead of yes, file names of mail and barcode documents and past schedules unknown.
+
+Commit 'fix: what the review of explain_workflow found' held a leftover mutant ('if False: raise' in the query check; a mutation run in the worktree was stopped by its time limit). It was put back in d7b07b2 before this note, where the existing test fails with it; every changed condition of the diff was compared by eye, no other leftover. Mutants run only in a copy from now on.
 <!-- SECTION:NOTES:END -->

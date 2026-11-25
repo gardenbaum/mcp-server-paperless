@@ -227,7 +227,7 @@ class _Checks:
         return f"{', '.join(shown)}{more}" if shown else "none"
 
     def consumption(self) -> None:
-        """What a consumption trigger looked at; only the file name is still known for sure."""
+        """What a consumption trigger looked at: nothing of it is kept for sure."""
         facts = self._facts
         sources = _ids(self._value("sources"))
         if sources:
