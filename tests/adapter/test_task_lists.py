@@ -336,8 +336,12 @@ async def test_every_filter_is_sent_under_the_name_paperless_has(
         ("finished", "date_done,-date_created"),
         ("-finished", "-date_done,-date_created"),
         ("state", "status,-date_created"),
+        ("-state", "-status,-date_created"),
+        ("task_type", "task_type,-date_created"),
         ("-task_type", "-task_type,-date_created"),
         ("duration_seconds", "duration_seconds,-date_created"),
+        ("-duration_seconds", "-duration_seconds,-date_created"),
+        ("wait_time_seconds", "wait_time_seconds,-date_created"),
         ("-wait_time_seconds", "-wait_time_seconds,-date_created"),
     ],
 )

@@ -419,11 +419,10 @@ you have to own every document, or it has no owner.
 Off by default. Administers the instance: users (`get_user`, `create_user`, `update_user`,
 `delete_user`), groups (`get_group`, `create_group`, `update_group`, `delete_group`), the
 application configuration (`get_app_config`, `update_app_config`), logs (`list_logs`,
-`get_log`) and
-`bulk_download`, which hands over the files of several documents as one ZIP archive: attached
-within the download limit, in parts, or saved (see [Uploads and downloads](#uploads-and-downloads)).
-`list_users` and `list_groups` of the `permissions` toolset find the users and
-groups.
+`get_log`) and `bulk_download`, which hands over the files of several documents as one ZIP archive:
+attached within the download limit, in parts, or saved (see
+[Uploads and downloads](#uploads-and-downloads)). `list_users` and `list_groups` of the
+`permissions` toolset find the users and groups.
 
 - Anything that gives or takes away access needs `confirm`, and the refusal names who is
   affected: creating a superuser or staff user or a user with a password, groups or permissions;
@@ -437,10 +436,9 @@ groups.
   keeps what is stored; written with an empty user name (`https://@host/path`) it loses them.
 - The account the server signs in with cannot be deleted, deactivated or stripped of its
   superuser status through these tools.
-- Paperless decides who may do what: most tools need the matching Paperless permission, the
-  logs are for staff users.
-- Log lines come without the user name and password of the URLs in them (`note` says
-  so).
+- Paperless decides who may do what: most tools need the matching Paperless permission, the logs
+  are for staff users.
+- Log lines come without the user name and password of the URLs in them (`note` says so).
 
 ### `tasks`
 
@@ -537,7 +535,8 @@ model names the file instead of encoding it.
   is refused; subdirectories more than 32 levels down are named, not read. What does not fit is named,
   and `next_after` goes on with the directory: it has to be passed unchanged, a file added before it
   meanwhile is missed (the number of files before it is said), and failed files are not repeated. After
-  a timeout or an aborted call the report is lost: look at `list_tasks` (or the server's log) before
+  a timeout or an aborted call the report is lost: look at `list_tasks` (toolset
+  `tasks`) or the server's log before
   repeating it. In reports a backslash in a name is doubled and characters nobody sees are escaped;
   `paths` and `directory` take paths in that form. It never sends a known duplicate: `upload_document` with `confirm` does, one
   by one. Equal files in two calls at once are not noticed until Paperless consumed the first. The
