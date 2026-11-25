@@ -1,10 +1,10 @@
-"""Records of a Paperless log, for tools that look for a few of them (decision-88).
+"""Records of a Paperless log, for tools that look for a few of them.
 
 A record starts with a line ``[2026-11-25 07:43:15,123] [INFO] [paperless.matching] message``.
 Inside a consume task the message begins with the first eight characters of the task id in
-brackets, the only sure sign of the document a record is about. Whoever shows something of a record
-says it in its own words: credentials are gone here (``lines_without_credentials``), names and text
-of other documents are not.
+brackets, which is the only sure sign of the document a record is about. Whoever shows something of
+a record says it in its own words, or redacts it: ``lines_without_credentials`` has been applied
+here, names and text of other documents may still be in it.
 """
 
 import re

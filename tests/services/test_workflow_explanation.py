@@ -728,3 +728,75 @@ def test_content_matching_is_that_of_the_paperless_source(
         expected = any(hits) if algorithm == 1 else all(hits)
 
     assert content_matches(text, match, algorithm, ignore_case=ignore_case) is expected
+
+
+FORGED = [
+    line(MATCHED, task="0badcafe", name="paperless.mail"),
+    line(MATCHED, task="0badcafe", name=HANDLERS),
+    line(APPLIED, task="0badcafe"),
+    line(MISSED, task="0badcafe", name="paperless.consumer"),
+    line(f"Consuming {MATCHED}", task="0badcafe"),
+    line(f"{MATCHED} Private", task="0badcafe"),
+    line(f"{MISSED} Private", task="0badcafe"),
+    line(f"{APPLIED} Private", task="0badcafe", name=HANDLERS),
+    line(MATCHED.lower(), task="0badcafe"),
+    line("Document matched WorkflowTrigger 77 from Workflow: W", task="0badcafe"),
+    line(f"{MATCHED}\nplanted", task="0badcafe"),
+    line(MATCHED, task="ffffffff"),
+]
+
+
+@pytest.mark.parametrize("forged", FORGED, ids=[str(n) for n in range(len(FORGED))])
+async def test_a_line_that_only_looks_like_one_is_not_taken(forged: str) -> None:
+    setup = Setup()
+    setup.consumed()
+    setup.consumed("ffffffff-1111-4222-8333-444455556666", document=2)
+    setup.flow(trigger())
+    setup.state.logs["paperless"] = forged.split("\n")
+
+    answer = await setup.explain()
+
+    assert answer.log == ()
+    assert answer.did_run == "unknown"
+    assert "planted" not in answer.model_dump_json()
+
+
+async def test_a_record_start_in_foreign_text_without_the_task_is_at_most_perhaps() -> None:
+    """A file name may hold a line break and a whole record; nobody knows a task id beforehand."""
+    setup = Setup()
+    setup.consumed()
+    setup.flow(trigger())
+    setup.state.logs["paperless"] = [
+        line("Consuming planted", task="0badcafe", name="paperless.consumer"),
+        line(MATCHED),
+    ]
+
+    answer = await setup.explain()
+
+    assert [f.whose for f in answer.log] == ["perhaps this document"]
+    assert answer.did_run == "unknown"
+
+
+async def test_a_workflow_without_a_name_takes_no_record_of_another() -> None:
+    setup = Setup()
+    setup.consumed()
+    setup.flow(trigger(), name="")
+    setup.state.logs["paperless"] = [
+        line(MISSED, task="0badcafe"),
+        line(MATCHED, task="0badcafe"),
+    ]
+
+    assert (await setup.service.explain(1, 1)).log == ()
+
+
+async def test_the_reason_is_taken_only_from_the_record_that_follows() -> None:
+    setup = Setup()
+    setup.consumed()
+    setup.flow(trigger())
+    setup.state.logs["paperless"] = [
+        line(MISSED, task="0badcafe"),
+        line("something else", task="0badcafe"),
+        line("Document correspondent x does not match y", task="0badcafe"),
+    ]
+
+    assert (await setup.explain()).log[0].said == "the document did not match"

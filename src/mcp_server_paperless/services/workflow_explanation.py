@@ -63,6 +63,7 @@ MAX_CHARS: Final = 50_000
 MAX_HISTORY, MAX_NAMES, MAX_FINDINGS, MAX_TASKS = 50, 10, 20, 100
 NEAR: Final = timedelta(minutes=2)
 LOG: Final = "paperless"
+MATCHING, HANDLERS = "paperless.matching", "paperless.handlers"
 FIRES: Final[Mapping[int, str]] = {
     1: "once, before the document was stored",
     2: "once, after the document was stored",
@@ -370,17 +371,21 @@ def _findings(workflow: Workflow, facts: _Facts) -> list[LogFinding]:
         f"Applying WorkflowAction {a.id} from Workflow: {workflow.name}": a.id
         for a in workflow.actions
     }
+    missed = f"Document did not match Workflow: {workflow.name}"
     found: list[LogFinding] = []
     for place, record in enumerate(facts.records):
-        if record.message in triggers:
-            said = f"the document matched trigger {triggers[record.message]}"
-        elif record.message in actions:
+        # The whole text and the logger: foreign text may look like a part of it.
+        said = None
+        if record.logger == MATCHING:
+            if record.message in triggers:
+                said = f"the document matched trigger {triggers[record.message]}"
+            elif record.message == missed:
+                said = "the document did not match" + _reason(
+                    facts.records[place + 1 : place + 2], record
+                )
+        elif record.logger == HANDLERS and record.message in actions:
             said = f"action {actions[record.message]} was applied"
-        elif record.message == f"Document did not match Workflow: {workflow.name}":
-            said = "the document did not match" + _reason(
-                facts.records[place + 1 : place + 2], record
-            )
-        else:
+        if said is None:
             continue
         if mine is not None and record.task == mine:
             whose = "this document"
