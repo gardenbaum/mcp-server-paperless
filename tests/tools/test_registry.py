@@ -932,7 +932,13 @@ async def test_self_test_tools_without_the_read_only_hint_are_found() -> None:
 async def test_self_test_read_only_mode_hides_what_the_table_marks_as_writing() -> None:
     table = {"bare": ToolAnnotations(), "delete_everything": ToolAnnotations(read_only_hint=True)}
     server = FastMCP(providers=[offenders])
-    _ = server.disable(names=set(hidden_tools(table, read_only=True, disabled=())))
+    _ = server.disable(
+        names=set(
+            hidden_tools(
+                table, read_only=True, disabled=(), read_only_toolsets=(), tool_toolsets={}
+            )
+        )
+    )
 
     remaining = {t.name for t in await server.list_tools()}
 
