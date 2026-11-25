@@ -13,16 +13,21 @@ from fastmcp import Client
 from harness import paperless_settings, server_settings
 
 from e2e.helpers import results
+from e2e.test_bulk import make
+from e2e.test_bulk_items import user
 from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Callable
 
     from fastmcp.client.transports import FastMCPTransport
 
     from e2e.helpers import Stack
+    from e2e.test_bulk_items import Signed
 
 pytestmark = [pytest.mark.e2e, pytest.mark.anyio]
+
+__all__ = ["user"]  # the fixture
 
 type Json = dict[str, object]
 type Connected = Client[FastMCPTransport]
@@ -45,6 +50,8 @@ async def client(stack: Stack) -> AsyncIterator[Connected]:
         if str(row["name"]).startswith(SCRATCH):
             _ = stack.admin.delete(f"/api/workflows/{row['id']}/")
     drop_orphaned_workflow_parts(stack)
+    for row in results(stack.admin.get("/api/tags/", params={"name__istartswith": SCRATCH})):
+        _ = stack.admin.delete(f"/api/tags/{row['id']}/")
 
 
 async def call(client: Connected, tool: str, **arguments: object) -> Json:
@@ -120,7 +127,8 @@ async def test_a_workflow_is_filed_by_names_read_changed_and_deleted(
         for w in cast("list[Json]", (await call(client, "list_workflows"))["workflows"])
     }
     assert name in listed
-    assert await call(client, "get_workflow", workflow=name.upper()) == created
+    read = await call(client, "get_workflow", workflow=name.upper())
+    assert read == {**{k: v for k, v in created.items() if k != "note"}, "part": None}
 
     renamed = await call(
         client, "update_workflow", workflow=name, name=f"{name}-b", triggers=[NEVER], order=9
@@ -240,3 +248,85 @@ async def test_a_manual_trigger_is_read_and_kept_and_only_the_web_ui_writes_it(
     assert "holds triggers this server cannot write" in replaced
     assert renamed["order"] == 7
     assert [t["type"] for t in cast("list[Json]", renamed["triggers"])] == [5]
+
+
+@pytest.mark.decision("decision-81")
+async def test_the_workflows_that_use_an_object_are_found_and_their_parts_read(
+    client: Connected, stack: Stack
+) -> None:
+    name = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
+    tag = f"{SCRATCH}tag-{uuid.uuid4().hex[:8]}"
+    number = make(stack, "tags", {"name": tag})
+    hook = {"url": "https://user:planted@h.invalid/x", "headers": {"X-Token": "planted"}}
+    _ = await call(
+        client,
+        "create_workflow",
+        name=name,
+        enabled=False,
+        triggers=[
+            NEVER,
+            {"type": "added", "has_tags": [tag], "custom_field_query": '["e2e-url","exists",true]'},
+        ],
+        actions=[
+            {"type": "webhook", "webhook": hook},
+            {"type": "removal", "remove_tags": [tag]},
+        ],
+    )
+    other = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
+    _ = await call(client, "create_workflow", name=other, triggers=[NEVER])
+
+    async def mine(**given: object) -> dict[str, Json]:
+        listed = cast("list[Json]", (await call(client, "list_workflows", **given))["workflows"])
+        return {str(w["name"]): w for w in listed if w["name"] in {name, other}}
+
+    by_tag = await mine(uses_kind="tag", uses=tag)
+    assert list(by_tag) == [name]
+    places = cast("list[Json]", by_tag[name]["used_in"])
+    assert [(p["part"], p["setting"]) for p in places] == [
+        ("trigger", "has_tags"),
+        ("action", "remove_tags"),
+    ]
+    assert list(await mine(uses_kind="custom_field", uses="e2e-url")) == [name]
+    assert list(await mine(uses_kind="tag", uses=number)) == [name]
+    assert list(await mine(uses_kind="user", uses="admin")) == []
+    assert list(await mine(enabled=True)) == [other]
+    assert list(await mine(trigger_type="added")) == [name]
+    assert set(await mine(trigger_type="consumption")) == {name, other}
+
+    trigger = await call(client, "get_workflow", trigger_id=places[0]["id"])
+    part = cast("Json", trigger["part"])
+    assert cast("Json", cast("Json", part["trigger"])["settings"])["has_tags"] == [tag]
+    assert [w["name"] for w in cast("list[Json]", part["workflows"])] == [name]
+    [webhook, removal] = cast("list[Json]", by_tag[name]["actions"])
+    shown = await call(client, "get_workflow", action_id=webhook["id"])
+    assert cast("Json", shown["part"])["action"] == webhook
+    assert "planted" not in str(shown)
+    assert removal["id"] == places[1]["id"]
+    assert "No workflow trigger 999999" in await refused(client, "get_workflow", trigger_id=999_999)
+
+
+@pytest.mark.decision("decision-81")
+async def test_a_user_who_may_only_view_workflows_reads_their_parts_too(
+    client: Connected, stack: Stack, user: Callable[..., Signed]
+) -> None:
+    name = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
+    made = await call(client, "create_workflow", name=name, enabled=False, triggers=[NEVER])
+    [trigger] = cast("list[Json]", made["triggers"])
+
+    async def read(right: str) -> object:
+        token = user(right, "view_uisettings").token
+        settings = server_settings(toolsets=["core", "workflows"])
+        server = create_server(paperless_settings(stack.base_url, token), settings)
+        arguments: Json = {"trigger_id": trigger["id"]}
+        async with Client(server) as restricted:
+            result = await restricted.call_tool("get_workflow", arguments, raise_on_error=False)
+        return str(result.content) if result.is_error else result.structured_content
+
+    held = cast("Json", cast("Json", await read("view_workflow"))["part"])
+    alone = cast("Json", cast("Json", await read("view_workflowtrigger"))["part"])
+    denied = await read("view_document")
+
+    assert held["trigger"] == alone["trigger"] == trigger
+    assert [w["name"] for w in cast("list[Json]", held["workflows"])] == [name]
+    assert alone["workflows"] is None
+    assert "may not perform this action" in str(denied)

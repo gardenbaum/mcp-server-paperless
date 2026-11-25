@@ -13793,34 +13793,68 @@
       'description': '''
         Read one workflow with its triggers and actions, as list_workflows shows it.
         
+        Or one trigger or action (part) with the workflows that hold it. Give exactly one argument.
         The workflow matches by exact name, then ignoring case and accents, or by id; an unknown or
         ambiguous name is an error that lists the closest names or candidates.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
+          'action_id': dict({
+            'anyOf': list([
+              dict({
+                'minimum': 1,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Instead: one action, by its id.',
+          }),
+          'trigger_id': dict({
+            'anyOf': list([
+              dict({
+                'minimum': 1,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Instead: one trigger, by its id.',
+          }),
           'workflow': dict({
             'anyOf': list([
               dict({
-                'type': 'string',
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
               }),
               dict({
-                'type': 'integer',
+                'type': 'null',
               }),
             ]),
+            'default': None,
             'description': 'The workflow: its name or id.',
           }),
         }),
-        'required': list([
-          'workflow',
-        ]),
         'type': 'object',
       }),
       'name': 'get_workflow',
       'outputSchema': dict({
-        'description': 'A workflow as tools show it.',
+        'description': 'A workflow, or one of its triggers or actions.',
         'properties': dict({
           'actions': dict({
+            'default': list([
+            ]),
             'items': dict({
               'description': 'An action as tools show it.',
               'properties': dict({
@@ -13868,15 +13902,29 @@
             'type': 'array',
           }),
           'enabled': dict({
-            'type': 'boolean',
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
           }),
           'id': dict({
-            'type': 'integer',
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'The workflow; null where a part was read.',
           }),
           'name': dict({
-            'type': 'string',
-          }),
-          'note': dict({
             'anyOf': list([
               dict({
                 'type': 'string',
@@ -13886,13 +13934,166 @@
               }),
             ]),
             'default': None,
-            'description': 'After a change: which webhook URLs lost or kept their credentials, and how to get back what a move to trash deletes.',
           }),
           'order': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
             'description': 'Workflows run in this order, lowest first.',
-            'type': 'integer',
+          }),
+          'part': dict({
+            'anyOf': list([
+              dict({
+                'description': 'A single trigger or action.',
+                'properties': dict({
+                  'action': dict({
+                    'anyOf': list([
+                      dict({
+                        'description': 'An action as tools show it.',
+                        'properties': dict({
+                          'id': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'integer',
+                              }),
+                              dict({
+                                'type': 'null',
+                              }),
+                            ]),
+                          }),
+                          'settings': dict({
+                            'additionalProperties': dict({
+                            }),
+                            'description': 'The settings that are not empty, named as create takes them.',
+                            'type': 'object',
+                          }),
+                          'shown_in_part': dict({
+                            'default': list([
+                            ]),
+                            'description': 'webhook.url if it has, or may have, credentials, which are not shown (nor the URL, if they cannot be told apart from the rest). Writing it back as shown, with this id, keeps what is stored.',
+                            'items': dict({
+                              'type': 'string',
+                            }),
+                            'type': 'array',
+                          }),
+                          'type': dict({
+                            'type': 'integer',
+                          }),
+                          'type_name': dict({
+                            'description': "The label of the type, e.g. 'assignment'.",
+                            'type': 'string',
+                          }),
+                        }),
+                        'required': list([
+                          'id',
+                          'type',
+                          'type_name',
+                          'settings',
+                        ]),
+                        'type': 'object',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'trigger': dict({
+                    'anyOf': list([
+                      dict({
+                        'description': 'A trigger as tools show it.',
+                        'properties': dict({
+                          'id': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'integer',
+                              }),
+                              dict({
+                                'type': 'null',
+                              }),
+                            ]),
+                          }),
+                          'settings': dict({
+                            'additionalProperties': dict({
+                            }),
+                            'description': 'The settings that are not at their default, named as create takes them.',
+                            'type': 'object',
+                          }),
+                          'type': dict({
+                            'type': 'integer',
+                          }),
+                          'type_name': dict({
+                            'description': "The label of the type, e.g. 'document added'.",
+                            'type': 'string',
+                          }),
+                        }),
+                        'required': list([
+                          'id',
+                          'type',
+                          'type_name',
+                          'settings',
+                        ]),
+                        'type': 'object',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'workflows': dict({
+                    'anyOf': list([
+                      dict({
+                        'items': dict({
+                          'description': 'A workflow that holds a trigger or action.',
+                          'properties': dict({
+                            'enabled': dict({
+                              'type': 'boolean',
+                            }),
+                            'id': dict({
+                              'type': 'integer',
+                            }),
+                            'name': dict({
+                              'type': 'string',
+                            }),
+                          }),
+                          'required': list([
+                            'id',
+                            'name',
+                            'enabled',
+                          ]),
+                          'type': 'object',
+                        }),
+                        'type': 'array',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'The workflows that hold it; empty: none, it does nothing; null: you may not view workflows, or there are too many to list.',
+                  }),
+                }),
+                'required': list([
+                  'workflows',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'With trigger_id or action_id: that part.',
           }),
           'triggers': dict({
+            'default': list([
+            ]),
             'items': dict({
               'description': 'A trigger as tools show it.',
               'properties': dict({
@@ -13931,14 +14132,6 @@
             'type': 'array',
           }),
         }),
-        'required': list([
-          'id',
-          'name',
-          'order',
-          'enabled',
-          'triggers',
-          'actions',
-        ]),
         'type': 'object',
       }),
       'title': 'Get workflow',
@@ -16876,7 +17069,12 @@
         'title': 'List workflows',
       }),
       'description': '''
-        List the workflows of Paperless with their triggers and actions.
+        List the workflows of Paperless with their triggers and actions, all or filtered.
+        
+        With uses_kind and uses, used_in names the trigger or action and the setting that uses the
+        object (also inside a custom field query, and a setting stored under a type that ignores it).
+        Names inside templates (titles, e-mails, webhooks) are not searched, and neither are parent and
+        child tags, which Paperless adds or removes along with a tag.
         
         Settings show names for tags, correspondents and so on, and only what is not at its default;
         they use the names create_workflow takes. Webhook header values, the user name and password in
@@ -16886,6 +17084,78 @@
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
+          'enabled': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only workflows that are (true) or are not (false) enabled.',
+          }),
+          'trigger_type': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'consumption',
+                  'added',
+                  'updated',
+                  'scheduled',
+                  'manual',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only workflows with such a trigger.',
+          }),
+          'uses': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'With uses_kind: the object, its name or id (a mail rule: its id).',
+          }),
+          'uses_kind': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'tag',
+                  'correspondent',
+                  'document_type',
+                  'storage_path',
+                  'custom_field',
+                  'user',
+                  'group',
+                  'mail_rule',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only workflows that use one object: its kind.',
+          }),
         }),
         'type': 'object',
       }),
@@ -16896,9 +17166,21 @@
           'count': dict({
             'type': 'integer',
           }),
+          'note': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'What the search for uses could not cover.',
+          }),
           'workflows': dict({
             'items': dict({
-              'description': 'A workflow as tools show it.',
+              'description': 'A workflow of a list.',
               'properties': dict({
                 'actions': dict({
                   'items': dict({
@@ -17005,6 +17287,44 @@
                       'type',
                       'type_name',
                       'settings',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'type': 'array',
+                }),
+                'used_in': dict({
+                  'default': list([
+                  ]),
+                  'description': 'With uses: where the object is used.',
+                  'items': dict({
+                    'description': 'Where a workflow uses an object.',
+                    'properties': dict({
+                      'id': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'integer',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                        'description': 'The id of the trigger or action.',
+                      }),
+                      'part': dict({
+                        'enum': list([
+                          'trigger',
+                          'action',
+                        ]),
+                        'type': 'string',
+                      }),
+                      'setting': dict({
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'part',
+                      'id',
+                      'setting',
                     ]),
                     'type': 'object',
                   }),
@@ -40368,34 +40688,68 @@
       'description': '''
         Read one workflow with its triggers and actions, as list_workflows shows it.
         
+        Or one trigger or action (part) with the workflows that hold it. Give exactly one argument.
         The workflow matches by exact name, then ignoring case and accents, or by id; an unknown or
         ambiguous name is an error that lists the closest names or candidates.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
+          'action_id': dict({
+            'anyOf': list([
+              dict({
+                'minimum': 1,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Instead: one action, by its id.',
+          }),
+          'trigger_id': dict({
+            'anyOf': list([
+              dict({
+                'minimum': 1,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Instead: one trigger, by its id.',
+          }),
           'workflow': dict({
             'anyOf': list([
               dict({
-                'type': 'string',
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
               }),
               dict({
-                'type': 'integer',
+                'type': 'null',
               }),
             ]),
+            'default': None,
             'description': 'The workflow: its name or id.',
           }),
         }),
-        'required': list([
-          'workflow',
-        ]),
         'type': 'object',
       }),
       'name': 'get_workflow',
       'outputSchema': dict({
-        'description': 'A workflow as tools show it.',
+        'description': 'A workflow, or one of its triggers or actions.',
         'properties': dict({
           'actions': dict({
+            'default': list([
+            ]),
             'items': dict({
               'description': 'An action as tools show it.',
               'properties': dict({
@@ -40443,15 +40797,29 @@
             'type': 'array',
           }),
           'enabled': dict({
-            'type': 'boolean',
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
           }),
           'id': dict({
-            'type': 'integer',
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'The workflow; null where a part was read.',
           }),
           'name': dict({
-            'type': 'string',
-          }),
-          'note': dict({
             'anyOf': list([
               dict({
                 'type': 'string',
@@ -40461,13 +40829,166 @@
               }),
             ]),
             'default': None,
-            'description': 'After a change: which webhook URLs lost or kept their credentials, and how to get back what a move to trash deletes.',
           }),
           'order': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
             'description': 'Workflows run in this order, lowest first.',
-            'type': 'integer',
+          }),
+          'part': dict({
+            'anyOf': list([
+              dict({
+                'description': 'A single trigger or action.',
+                'properties': dict({
+                  'action': dict({
+                    'anyOf': list([
+                      dict({
+                        'description': 'An action as tools show it.',
+                        'properties': dict({
+                          'id': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'integer',
+                              }),
+                              dict({
+                                'type': 'null',
+                              }),
+                            ]),
+                          }),
+                          'settings': dict({
+                            'additionalProperties': dict({
+                            }),
+                            'description': 'The settings that are not empty, named as create takes them.',
+                            'type': 'object',
+                          }),
+                          'shown_in_part': dict({
+                            'default': list([
+                            ]),
+                            'description': 'webhook.url if it has, or may have, credentials, which are not shown (nor the URL, if they cannot be told apart from the rest). Writing it back as shown, with this id, keeps what is stored.',
+                            'items': dict({
+                              'type': 'string',
+                            }),
+                            'type': 'array',
+                          }),
+                          'type': dict({
+                            'type': 'integer',
+                          }),
+                          'type_name': dict({
+                            'description': "The label of the type, e.g. 'assignment'.",
+                            'type': 'string',
+                          }),
+                        }),
+                        'required': list([
+                          'id',
+                          'type',
+                          'type_name',
+                          'settings',
+                        ]),
+                        'type': 'object',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'trigger': dict({
+                    'anyOf': list([
+                      dict({
+                        'description': 'A trigger as tools show it.',
+                        'properties': dict({
+                          'id': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'integer',
+                              }),
+                              dict({
+                                'type': 'null',
+                              }),
+                            ]),
+                          }),
+                          'settings': dict({
+                            'additionalProperties': dict({
+                            }),
+                            'description': 'The settings that are not at their default, named as create takes them.',
+                            'type': 'object',
+                          }),
+                          'type': dict({
+                            'type': 'integer',
+                          }),
+                          'type_name': dict({
+                            'description': "The label of the type, e.g. 'document added'.",
+                            'type': 'string',
+                          }),
+                        }),
+                        'required': list([
+                          'id',
+                          'type',
+                          'type_name',
+                          'settings',
+                        ]),
+                        'type': 'object',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'workflows': dict({
+                    'anyOf': list([
+                      dict({
+                        'items': dict({
+                          'description': 'A workflow that holds a trigger or action.',
+                          'properties': dict({
+                            'enabled': dict({
+                              'type': 'boolean',
+                            }),
+                            'id': dict({
+                              'type': 'integer',
+                            }),
+                            'name': dict({
+                              'type': 'string',
+                            }),
+                          }),
+                          'required': list([
+                            'id',
+                            'name',
+                            'enabled',
+                          ]),
+                          'type': 'object',
+                        }),
+                        'type': 'array',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'The workflows that hold it; empty: none, it does nothing; null: you may not view workflows, or there are too many to list.',
+                  }),
+                }),
+                'required': list([
+                  'workflows',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'With trigger_id or action_id: that part.',
           }),
           'triggers': dict({
+            'default': list([
+            ]),
             'items': dict({
               'description': 'A trigger as tools show it.',
               'properties': dict({
@@ -40506,14 +41027,6 @@
             'type': 'array',
           }),
         }),
-        'required': list([
-          'id',
-          'name',
-          'order',
-          'enabled',
-          'triggers',
-          'actions',
-        ]),
         'type': 'object',
       }),
       'title': 'Get workflow',
@@ -43000,7 +43513,12 @@
         'title': 'List workflows',
       }),
       'description': '''
-        List the workflows of Paperless with their triggers and actions.
+        List the workflows of Paperless with their triggers and actions, all or filtered.
+        
+        With uses_kind and uses, used_in names the trigger or action and the setting that uses the
+        object (also inside a custom field query, and a setting stored under a type that ignores it).
+        Names inside templates (titles, e-mails, webhooks) are not searched, and neither are parent and
+        child tags, which Paperless adds or removes along with a tag.
         
         Settings show names for tags, correspondents and so on, and only what is not at its default;
         they use the names create_workflow takes. Webhook header values, the user name and password in
@@ -43010,6 +43528,78 @@
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
+          'enabled': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only workflows that are (true) or are not (false) enabled.',
+          }),
+          'trigger_type': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'consumption',
+                  'added',
+                  'updated',
+                  'scheduled',
+                  'manual',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only workflows with such a trigger.',
+          }),
+          'uses': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'With uses_kind: the object, its name or id (a mail rule: its id).',
+          }),
+          'uses_kind': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'tag',
+                  'correspondent',
+                  'document_type',
+                  'storage_path',
+                  'custom_field',
+                  'user',
+                  'group',
+                  'mail_rule',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only workflows that use one object: its kind.',
+          }),
         }),
         'type': 'object',
       }),
@@ -43020,9 +43610,21 @@
           'count': dict({
             'type': 'integer',
           }),
+          'note': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'What the search for uses could not cover.',
+          }),
           'workflows': dict({
             'items': dict({
-              'description': 'A workflow as tools show it.',
+              'description': 'A workflow of a list.',
               'properties': dict({
                 'actions': dict({
                   'items': dict({
@@ -43129,6 +43731,44 @@
                       'type',
                       'type_name',
                       'settings',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'type': 'array',
+                }),
+                'used_in': dict({
+                  'default': list([
+                  ]),
+                  'description': 'With uses: where the object is used.',
+                  'items': dict({
+                    'description': 'Where a workflow uses an object.',
+                    'properties': dict({
+                      'id': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'integer',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                        'description': 'The id of the trigger or action.',
+                      }),
+                      'part': dict({
+                        'enum': list([
+                          'trigger',
+                          'action',
+                        ]),
+                        'type': 'string',
+                      }),
+                      'setting': dict({
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'part',
+                      'id',
+                      'setting',
                     ]),
                     'type': 'object',
                   }),

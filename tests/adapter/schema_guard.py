@@ -290,6 +290,7 @@ _WORKFLOW_ENDPOINTS = (
     ("GET", "/api/workflows/{id}/", 200),
     ("POST", "/api/workflows/", 201),
     ("PATCH", "/api/workflows/{id}/", 200),
+    ("GET", "/api/workflow_actions/{id}/", 200),
 )
 _NULL_OBJECTS = (
     frozenset({"email", "webhook"}),

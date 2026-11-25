@@ -7,6 +7,7 @@ import httpx2
 import pytest
 
 from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
@@ -170,7 +171,7 @@ async def test_more_workflows_than_the_cap_fail_instead_of_resolving_on_a_part(
 ) -> None:
     server = Recording(page(WIRE, count=MAX_ITEMS + 1))
 
-    with pytest.raises(PaperlessMcpError, match=f"more than {MAX_ITEMS} workflows"):
+    with pytest.raises(AnswerTooLarge, match=f"more than {MAX_ITEMS} workflows"):
         _ = await PaperlessWorkflowReader(make_client(server)).list_workflows()
 
 
@@ -312,3 +313,70 @@ async def test_an_action_without_a_type_is_an_error_not_a_guess(
         _ = await PaperlessWorkflowReader(make_client(server)).get_workflow(3)
 
     assert raised.value.message == "Paperless sent a workflow trigger or action without a type."
+
+
+@pytest.mark.parametrize(
+    ("given", "sent"),
+    [
+        ({"enabled": True}, {"enabled": "true"}),
+        ({"enabled": False, "trigger_type": 5}, {"enabled": "false", "trigger_type": "5"}),
+        ({"trigger_type": 1}, {"trigger_type": "1"}),
+    ],
+)
+async def test_the_list_is_filtered_by_paperless(
+    make_client: ClientFactory, given: dict[str, int], sent: dict[str, str]
+) -> None:
+    server = Recording(page(WIRE))
+    reader = PaperlessWorkflowReader(make_client(server))
+
+    found = await reader.list_workflows(
+        enabled=cast("bool | None", given.get("enabled")), trigger_type=given.get("trigger_type")
+    )
+
+    assert found == (WORKFLOW,)
+    [(_, path, _, params)] = server.sent
+    assert path == "/api/workflows/"
+    assert params == {"page": "1", "page_size": "100", **sent}
+
+
+async def test_a_single_trigger_and_a_single_action_are_read(make_client: ClientFactory) -> None:
+    server = Recording(
+        httpx2.Response(200, json=TRIGGER_WIRE), httpx2.Response(200, json=ACTION_WIRE)
+    )
+    reader = PaperlessWorkflowReader(make_client(server))
+
+    assert await reader.get_trigger(5) == WORKFLOW.triggers[0]
+    assert await reader.get_action(6) == WORKFLOW.actions[0]
+    assert [(method, path) for method, path, _, _ in server.sent] == [
+        ("GET", "/api/workflow_triggers/5/"),
+        ("GET", "/api/workflow_actions/6/"),
+    ]
+
+
+async def test_a_missing_trigger_or_action_is_not_found_with_a_hint(
+    make_client: ClientFactory,
+) -> None:
+    gone = {"detail": "No match."}
+    server = Recording(httpx2.Response(404, json=gone), httpx2.Response(404, json=gone))
+    reader = PaperlessWorkflowReader(make_client(server))
+
+    with pytest.raises(NotFound, match=r"^No workflow trigger 9 exists\.$") as trigger:
+        _ = await reader.get_trigger(9)
+    with pytest.raises(NotFound, match=r"^No workflow action 9 exists\.$") as action:
+        _ = await reader.get_action(9)
+
+    hint = "Call list_workflows to see the ids of triggers and actions."
+    assert (trigger.value.hint, action.value.hint) == (hint, hint)
+
+
+async def test_a_user_without_the_permission_for_a_part_is_denied(
+    make_client: ClientFactory,
+) -> None:
+    no = {"detail": "no"}
+    server = Recording(httpx2.Response(403, json=no), httpx2.Response(403, json=no))
+    reader = PaperlessWorkflowReader(make_client(server))
+
+    with pytest.raises(PermissionDenied):
+        _ = await reader.get_trigger(5)
+    with pytest.raises(PermissionDenied):
+        _ = await reader.get_action(6)

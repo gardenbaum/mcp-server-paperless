@@ -880,6 +880,14 @@ async def test_workflows_take_every_trigger_and_action_with_every_setting() -> N
         )
     await sweep("get_workflow", {"workflow": 1}, (), prepare=with_workflow)
     await sweep("list_workflows", {}, (), prepare=with_workflow)
+    await sweep("get_workflow", {"trigger_id": 1}, (), prepare=with_workflow)
+    await sweep("get_workflow", {"action_id": 2}, (), prepare=with_workflow)
+    for enabled in (True, False):
+        given: Json = {"enabled": enabled, "trigger_type": "added"}
+        await sweep("list_workflows", given, (), prepare=with_workflow)
+    await sweep(
+        "list_workflows", {"uses_kind": "tag", "uses": "e2e-finance"}, (), prepare=with_workflow
+    )
     await sweep("delete_workflow", {"workflow": 1}, (), prepare=with_workflow)
     filters: Json = {"title_contains": "e2e"}
     for chosen in (
