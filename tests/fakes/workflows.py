@@ -414,9 +414,19 @@ def _actions(
             if "://" not in str(hook["url"]):
                 reject("webhook.url", f"Unable to parse URI {hook['url']}, missing scheme")
             settings["webhook"] = hook
+        if action.type == SUGGEST:
+            _check_suggested(settings.get("ai_suggestion_fields"))
         _check_references(user, settings, kinds)
         made.append(WorkflowAction(id=_next_id(data), type=action.type, settings=settings))
     return tuple(made)
+
+
+AI_FIELDS = {"title", "tags", "correspondent", "document_type", "storage_path", "created"}
+
+
+def _check_suggested(fields: JsonValue) -> None:
+    if not isinstance(fields, list) or not fields or not {str(f) for f in fields} <= AI_FIELDS:
+        reject("actions", "At least one valid field is required for apply AI suggestions actions")
 
 
 def _nested(
@@ -437,8 +447,13 @@ def _nested(
 def _check_together(
     triggers: tuple[WorkflowTrigger, ...], actions: tuple[WorkflowAction, ...]
 ) -> None:
-    """Remote OCR needs a consumption trigger."""
+    """Remote OCR needs a consumption trigger, AI suggestions another one."""
     if any(a.type == REMOTE_OCR for a in actions) and not any(
         t.type == CONSUMPTION for t in triggers
     ):
         reject("non_field_errors", "Remote OCR actions require a consumption started trigger")
+    if any(a.type == SUGGEST for a in actions) and not any(t.type != CONSUMPTION for t in triggers):
+        reject(
+            "non_field_errors",
+            "Apply AI suggestions actions require a trigger other than consumption started",
+        )

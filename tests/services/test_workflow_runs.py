@@ -667,7 +667,7 @@ async def test_an_unusable_workflow_is_refused(*, dry_run: bool, confirm: bool) 
         "Nothing was run: the workflow 'Paid' (id 3) has no manual trigger, so it cannot be run by "
         "hand."
     )
-    assert automatic.value.hint == "Add a manual trigger to it in the Paperless web UI."
+    assert automatic.value.hint == "Add a manual trigger to it with update_workflow_part."
 
 
 async def test_an_unknown_or_ambiguous_workflow_is_refused() -> None:

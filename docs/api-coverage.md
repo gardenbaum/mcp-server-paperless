@@ -277,12 +277,12 @@ TOML file.
 | `POST /api/users/` | `body:date_joined` | PLMCP-83 |
 | `PATCH /api/users/{id}/` | `body:date_joined` | PLMCP-83 |
 | `GET /api/workflows/` | `query:id`, `query:id__in` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
-| `POST /api/workflows/` | `body:actions[].ai_create_missing`, `body:actions[].ai_overwrite_existing`, `body:actions[].ai_suggestion_fields`, `body:actions[].passwords` | PLMCP-87 |
-| `POST /api/workflows/` | `body:actions[].type=5`, `body:actions[].type=8`, `body:triggers[].type=5` | PLMCP-87 |
 | `POST /api/workflows/` | `body:actions[].email.id`, `body:actions[].id`, `body:actions[].webhook.id`, `body:triggers[].id` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
-| `PATCH /api/workflows/{id}/` | `body:actions[].ai_create_missing`, `body:actions[].ai_overwrite_existing`, `body:actions[].ai_suggestion_fields`, `body:actions[].passwords` | PLMCP-87 |
-| `PATCH /api/workflows/{id}/` | `body:actions[].type=5`, `body:actions[].type=8`, `body:triggers[].type=5` | PLMCP-87 |
+| `POST /api/workflows/` | `body:actions[].type=5` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-86 - Manual-triggers-and-AI-suggestions-are-written-password-removal-stays-with-the-web-UI.md) |
+| `POST /api/workflows/` | `body:actions[].passwords` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-86 - Manual-triggers-and-AI-suggestions-are-written-password-removal-stays-with-the-web-UI.md) |
 | `PATCH /api/workflows/{id}/` | `body:actions[].email.id`, `body:actions[].webhook.id` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
+| `PATCH /api/workflows/{id}/` | `body:actions[].type=5` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-86 - Manual-triggers-and-AI-suggestions-are-written-password-removal-stays-with-the-web-UI.md) |
+| `PATCH /api/workflows/{id}/` | `body:actions[].passwords` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-86 - Manual-triggers-and-AI-suggestions-are-written-password-removal-stays-with-the-web-UI.md) |
 
 ## Fields only a saved view reaches
 

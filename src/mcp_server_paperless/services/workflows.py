@@ -102,14 +102,9 @@ TRIGGER_ALIASES: Final[Mapping[int, tuple[str, ...]]] = {
     3: ("updated",),
 }
 ACTION_ALIASES: Final[Mapping[int, tuple[str, ...]]] = {6: ("trash",), 7: ("ocr",)}
-# Why a tool may not write a trigger type that Paperless has.
-UNWRITABLE_TRIGGERS: Final[Mapping[int, str]] = {
-    5: "this server runs such a workflow (run_workflow) but does not make its trigger",
-}
 # Why a tool may not write an action type that Paperless has.
 UNWRITABLE: Final[Mapping[int, str]] = {
     5: "it holds passwords, which this server never shows and so could not keep",
-    8: "it makes Paperless ask its AI backend about every matching document",
 }
 OWNERSHIP: Final = (
     "assign_owner",
@@ -140,12 +135,11 @@ MANUAL_FILTERS: Final = frozenset(
 NO_OCR: Final = "run remote OCR (Paperless ignores it here: it needs a document being consumed)"
 TRASH_NOTE: Final = f"A document this workflow moves to the trash {WAY_BACK}"
 SUGGESTIONS: Final = 5
-# What the actions that need no settings do; password removal and AI suggestions cannot be written
-# here but a workflow made in the web UI can hold them (switching it on needs confirm too).
+# What the actions that need no settings do; password removal cannot be written here but a workflow
+# made in the web UI can hold it (switching it on needs confirm too).
 FIXED_ACTS: Final[Mapping[int, str]] = {
     5: "unlock each matching document with stored passwords and add the result as a new version",
     6: "move the matching documents to the trash",
-    8: "ask the AI backend about every matching document and apply what it suggests",
 }
 
 
@@ -180,26 +174,10 @@ def trigger_type(value: int | str) -> int:
     raise Validation(
         message,
         hint=(
-            "Use consumption (1), added (2), updated (3) or scheduled (4), "
+            "Use consumption (1), added (2), updated (3), scheduled (4) or manual (5), "
             "or a label such as 'document added'."
         ),
     )
-
-
-def require_writable_triggers(specs: Sequence[TriggerInput]) -> None:
-    """Refuse a trigger type that Paperless has and this server does not write.
-
-    Raises:
-        Validation: A type has no such number or name, or is one that stays with the web UI.
-    """
-    for spec in specs:
-        number = trigger_type(spec.type)
-        if number not in WRITABLE_TRIGGER_TYPES:
-            message = (
-                f"The workflow trigger type {TRIGGER_TYPES[number]!r} ({number}) cannot be "
-                f"written by this server: {UNWRITABLE_TRIGGERS[number]}."
-            )
-            raise Validation(message, hint="Set it up in the Paperless web UI.")
 
 
 def action_type(value: int | str) -> int:
@@ -223,8 +201,8 @@ def action_type(value: int | str) -> int:
     raise Validation(
         message,
         hint=(
-            "Use assignment (1), removal (2), email (3), webhook (4), move to trash (6) or "
-            "remote OCR (7)."
+            "Use assignment (1), removal (2), email (3), webhook (4), move to trash (6), remote "
+            "OCR (7) or apply AI suggestions (8)."
         ),
     )
 
@@ -631,10 +609,10 @@ def far_acts(
     reached = 0
     for place, action in enumerate(actions, start=1):
         settings = action.settings
-        if action.type in FIXED_ACTS:
-            found.append(FIXED_ACTS[action.type])
-        elif action.type not in ACTION_TYPES:
-            found.append(f"run an action of type {action.type}")
+        if action.type in FIXED_ACTS or action.type not in ACTION_TYPES:
+            found.append(FIXED_ACTS.get(action.type, f"run an action of type {action.type}"))
+        elif action.type == SUGGEST:
+            found.append(_suggestions(settings, "every matching document"))
         elif action.type == EMAIL:
             mail = as_object(settings.get("email"))
             attached = " with the document attached" if mail.get("include_document") else ""
@@ -924,7 +902,6 @@ class WorkflowService:
         """
         name = self._name(spec.name)
         workflows = await self._free(name, except_id=None)
-        require_writable_triggers(spec.triggers)
         triggers = tuple([await self.build_trigger(t) for t in spec.triggers])
         actions = tuple(
             [await self.build_action(a, (), n) for n, a in enumerate(spec.actions, start=1)]
@@ -957,7 +934,7 @@ class WorkflowService:
                 takes things away (by new triggers or actions, or by switching it on), or loses
                 hidden values, and ``confirm`` is false. Nothing was changed.
             Validation: Nothing to change, a name that is empty or taken, a setting or value that
-                is unusable, a trigger of a type this server does not write (manual), or new
+                is unusable, or new
                 triggers or actions that would drop ones this server cannot write.
             NotFound: No such workflow, or a name matches nothing.
             Ambiguous: A name matches several workflows or objects.
@@ -978,7 +955,6 @@ class WorkflowService:
         if edit.enabled is not None:
             changes["enabled"] = edit.enabled
         if edit.triggers is not None:
-            require_writable_triggers(edit.triggers)
             self._keeps_unwritable_triggers(found)
             changes["triggers"] = tuple([await self.build_trigger(t) for t in edit.triggers])
         if edit.actions is not None:
@@ -1146,7 +1122,8 @@ class WorkflowService:
             value = cast("object", getattr(spec, name))
             if value is None:
                 continue
-            if name in CONSUMPTION_ONLY and number != CONSUMPTION:
+            by_hand = number == MANUAL and name in MANUAL_FILTERS
+            if name in CONSUMPTION_ONLY and number != CONSUMPTION and not by_hand:
                 message = f"{name!r} only applies to consumption triggers, not to {label} triggers."
                 raise Validation(message, hint="Leave it out, or use a consumption trigger.")
             if name in SCHEDULED_ONLY and number != SCHEDULED:
@@ -1169,9 +1146,17 @@ class WorkflowService:
         return WorkflowTrigger(type=number, settings=settings)
 
     async def build_action(
-        self, spec: ActionInput, stored: Sequence[WorkflowAction], place: int
+        self,
+        spec: ActionInput,
+        stored: Sequence[WorkflowAction],
+        place: int,
+        *,
+        change: bool = False,
     ) -> WorkflowAction:
-        """The action to write at ``place``; ``stored`` are the ones there are now."""
+        """The action to write at ``place``; ``stored`` are the ones there are now.
+
+        With ``change`` it is one of them, and ``spec`` holds only what changes.
+        """
         number = action_type(spec.type)
         settings: dict[str, JsonValue] = {}
         for owner, fields in ACTION_FIELDS.items():
@@ -1194,6 +1179,9 @@ class WorkflowService:
         if number == WEBHOOK and "webhook" not in settings:
             message = "A webhook action needs webhook settings."
             raise Validation(message, hint="Pass webhook with a url.")
+        if number == SUGGEST and "ai_suggestion_fields" not in settings and not change:
+            message = "An apply AI suggestions action needs ai_suggestion_fields."
+            raise Validation(message, hint="Name the fields to apply, e.g. title and tags.")
         values = as_object(settings.get("assign_custom_fields_values"))
         if values:
             held = cast("list[JsonValue]", settings.get("assign_custom_fields", []))
@@ -1365,9 +1353,6 @@ def _read_only(action: WorkflowAction) -> dict[str, JsonValue]:
     settings = action.settings
     if action.type == 5:  # noqa: PLR2004 -- password removal
         return {"passwords": HIDDEN} if not is_empty(settings.get("passwords")) else {}
-    if action.type == 8:  # noqa: PLR2004 -- apply AI suggestions
-        names = ("ai_suggestion_fields", "ai_create_missing", "ai_overwrite_existing")
-        return {n: settings[n] for n in names if n in settings and not is_empty(settings[n])}
     return {}
 
 
@@ -1410,7 +1395,7 @@ class _Texts:
         if action.type == TRASH_ACTION:
             return [TRASHES]
         if action.type == SUGGEST:
-            return [_suggestions(action.settings)]
+            return [_suggestions(action.settings, "each of them")]
         if action.type not in {ASSIGNMENT, REMOVAL}:
             return far_acts([action])
         values = self._values(action)
@@ -1484,8 +1469,8 @@ class _Texts:
         return " (with any child tags you cannot see)"
 
 
-def _suggestions(settings: Mapping[str, JsonValue]) -> str:
-    """What an action that applies AI suggestions may do."""
+def _suggestions(settings: Mapping[str, JsonValue], which: str) -> str:
+    """What an action that applies AI suggestions may do to ``which`` documents."""
     given = settings.get("ai_suggestion_fields")
     fields = [str(name) for name in given] if isinstance(given, list) else []
     if not fields:
@@ -1504,7 +1489,7 @@ def _suggestions(settings: Mapping[str, JsonValue]) -> str:
         else "without creating anything"
     )
     return (
-        "ask the AI backend about the text of each of them and apply what it suggests for "
+        f"ask the AI backend about the text of {which} and apply what it suggests for "
         f"{told}, {over}, {makes}"
     )
 

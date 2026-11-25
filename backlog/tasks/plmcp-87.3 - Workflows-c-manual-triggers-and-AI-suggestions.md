@@ -1,9 +1,11 @@
 ---
 id: PLMCP-87.3
 title: 'Workflows c: manual triggers and AI suggestions'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T22:43:06Z'
+updated_date: '2026-11-25T08:16:32Z'
 labels:
   - workflows
 dependencies:
@@ -34,3 +36,11 @@ Third part of PLMCP-87: run_workflow runs manual triggers, but only the web UI c
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Tests first: domain types, service (create, update, part), contract on fake and 3.5.1, tools, E2E.
+2. Manual triggers: filters Paperless reads (decision-75); AI suggestions: the three settings, confirmed with the wording of decision-75.
+3. Exclusion of password removal, decision-86 (supersedes that part of decision-21), docs, snapshots.
+<!-- SECTION:PLAN:END -->

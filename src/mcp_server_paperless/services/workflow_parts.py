@@ -50,7 +50,6 @@ from mcp_server_paperless.services.workflows import (
     losing,
     past_fate,
     place_notes,
-    require_writable_triggers,
     trigger_type,
     workflow_effect,
 )
@@ -74,6 +73,8 @@ if TYPE_CHECKING:
 AGAIN: Final = "Read it with get_workflow and tell the user; do not call again on your own."
 # One of these a consumption trigger has to have: without any it would match every file.
 ORIGIN_FILTERS: Final = ("filter_filename", "filter_path", "filter_mailrule")
+# What an action of its type cannot be without.
+REQUIRED: Final = frozenset({"email", "webhook", "ai_suggestion_fields"})
 ORIGIN_HINT: Final = "Give a path, filename or mailrule filter, or remove the trigger."
 
 
@@ -171,8 +172,8 @@ def _cleared(
     cleared: dict[str, JsonValue] = {}
     for name in names:
         field = fields.get(name)
-        if field is None or name in {"email", "webhook"}:
-            allowed = ", ".join(n for n in fields if n not in {"email", "webhook"}) or "none"
+        if field is None or name in REQUIRED:
+            allowed = ", ".join(n for n in fields if n not in REQUIRED) or "none"
             message = f"{name!r} cannot be cleared."
             raise _usage(message, f"What can be: {allowed}.")
         if field.wire in given:
@@ -346,8 +347,6 @@ class WorkflowParts:
         self, workflows: Sequence[Workflow], found: Workflow, edit: PartEdit
     ) -> _Plan:
         triggers = list(found.triggers)
-        if edit.trigger is not None:
-            require_writable_triggers([edit.trigger])
         if edit.operation == "add" and edit.trigger is not None:
             new = await self._workflows.build_trigger(edit.trigger)
             self._limited(new)
@@ -494,7 +493,8 @@ class WorkflowParts:
         if edit.action is not None:
             _same_type(action_type(edit.action.type), old.type, ACTION_TYPES, "action")
             spec = edit.action.model_copy(update={"id": old.id})
-            given = dict((await self._workflows.build_action(spec, found.actions, place)).settings)
+            built = await self._workflows.build_action(spec, found.actions, place, change=True)
+            given = dict(built.settings)
             if not given and not edit.clear:
                 message = "no setting was named."
                 raise _usage(message, "Pass the settings that change, clear or position.")

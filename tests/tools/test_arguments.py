@@ -780,9 +780,18 @@ TRIGGERS: list[Json] = [
         "schedule_is_recurring": True,
         "schedule_recurring_interval_days": 7,
     },
+    {"type": "manual", "filename": "*.pdf"},
     {"type": "scheduled", "schedule_date_field": "created", "schedule_date_custom_field": 1},
 ]
 ACTIONS: list[Json] = [
+    {
+        "type": "apply AI suggestions",
+        "ai_suggestion_fields": [
+            *("title", "tags", "correspondent", "document_type", "storage_path", "created")
+        ],
+        "ai_create_missing": True,
+        "ai_overwrite_existing": True,
+    },
     {
         "type": "assignment",
         "assign_title": "{{ title }}",
@@ -875,7 +884,8 @@ async def test_workflows_take_every_trigger_and_action_with_every_setting() -> N
             prepare=with_workflow,
         )
     for action in ACTIONS:
-        await sweep("create_workflow", {"name": "Sweep", "enabled": False, "actions": [action]}, ())
+        built: Json = {"name": "Sweep", "enabled": False, "actions": [action]}
+        await sweep("create_workflow", {**built, "triggers": [{"type": "manual"}]}, ())
         await sweep(
             "update_workflow", {"workflow": 1, "actions": [action]}, (), prepare=with_workflow
         )
@@ -889,6 +899,15 @@ async def test_workflows_take_every_trigger_and_action_with_every_setting() -> N
     await sweep(
         "list_workflows", {"uses_kind": "tag", "uses": "e2e-finance"}, (), prepare=with_workflow
     )
+    plain: Json = {
+        "type": "apply AI suggestions",
+        "ai_suggestion_fields": ["title"],
+        "ai_create_missing": False,
+        "ai_overwrite_existing": False,
+    }
+    await sweep("update_workflow", {"workflow": 1, "actions": [plain]}, (), prepare=with_workflow)
+    asked: Json = {"name": "AI", "triggers": [{"type": "manual"}], "actions": [plain]}
+    await sweep("create_workflow", asked, ())
     part: Json = {"workflow": 1, "operation": "add"}
     for trigger in TRIGGERS:
         await sweep("update_workflow_part", {**part, "trigger": trigger}, (), prepare=with_workflow)

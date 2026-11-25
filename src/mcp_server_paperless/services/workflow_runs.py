@@ -408,7 +408,7 @@ def _require_usable(workflow: Workflow) -> None:
         raise Validation(message, hint=hint)
     if not any(trigger.type == MANUAL for trigger in workflow.triggers):
         message = f"{subject} has no manual trigger, so it cannot be run by hand."
-        raise Validation(message, hint="Add a manual trigger to it in the Paperless web UI.")
+        raise Validation(message, hint="Add a manual trigger to it with update_workflow_part.")
 
 
 def _preview(call: _Call) -> WorkflowRunReport:

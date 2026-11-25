@@ -95,7 +95,7 @@ def test_every_setting_of_a_trigger_is_known_and_none_is_missing() -> None:
 
 def test_every_setting_of_an_action_is_known_and_the_rest_is_read_only() -> None:
     wires = {field.wire for fields in ACTION_FIELDS.values() for field in fields.values()}
-    read_only = {"passwords", "ai_suggestion_fields", "ai_create_missing", "ai_overwrite_existing"}
+    read_only = {"passwords"}
 
     assert wires | read_only == properties("WorkflowActionRequest") - {"id", "type"}
     assert not wires & read_only

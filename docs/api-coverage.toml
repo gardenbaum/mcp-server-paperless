@@ -347,17 +347,6 @@ fields = ["body:date_joined"]
 task = "PLMCP-83"
 
 [[open_fields]]
-operation = "PATCH /api/workflows/{id}/"
-fields = ["body:actions[].ai_create_missing", "body:actions[].ai_overwrite_existing", "body:actions[].ai_suggestion_fields", "body:actions[].passwords"]
-task = "PLMCP-87"
-
-[[open_fields]]
-operation = "PATCH /api/workflows/{id}/"
-fields = ["body:actions[].type=5", "body:actions[].type=8", "body:triggers[].type=5"]
-task = "PLMCP-87"
-reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them. A manual trigger (type 5) is read but not written: a workflow with it is run with run_workflow, but the trigger is made in the web UI (PLMCP-97; PLMCP-87 decides whether to write it)."
-
-[[open_fields]]
 operation = "POST /api/correspondents/"
 fields = ["body:owner", "body:set_permissions"]
 task = "PLMCP-83"
@@ -472,17 +461,6 @@ reason = "run_task offers train_classifier, sanity_check and llm_index; which of
 operation = "POST /api/users/"
 fields = ["body:date_joined"]
 task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/workflows/"
-fields = ["body:actions[].ai_create_missing", "body:actions[].ai_overwrite_existing", "body:actions[].ai_suggestion_fields", "body:actions[].passwords"]
-task = "PLMCP-87"
-
-[[open_fields]]
-operation = "POST /api/workflows/"
-fields = ["body:actions[].type=5", "body:actions[].type=8", "body:triggers[].type=5"]
-task = "PLMCP-87"
-reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them. A manual trigger (type 5) is read but not written: a workflow with it is run with run_workflow, but the trigger is made in the web UI (PLMCP-97; PLMCP-87 decides whether to write it)."
 
 [[exclusion]]
 operation = "POST /api/bulk_edit_objects/"
@@ -657,3 +635,33 @@ fields = ["body:actions[].email.id", "body:actions[].webhook.id"]
 quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "POST /api/workflows/"
+fields = ["body:actions[].type=5"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-86 - Manual-triggers-and-AI-suggestions-are-written-password-removal-stays-with-the-web-UI.md"
+reason = "password removal holds passwords, which would go through the chat and could not be shown or kept; the web UI writes it"
+
+[[exclusion]]
+operation = "POST /api/workflows/"
+fields = ["body:actions[].passwords"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-86 - Manual-triggers-and-AI-suggestions-are-written-password-removal-stays-with-the-web-UI.md"
+
+[[exclusion]]
+operation = "PATCH /api/workflows/{id}/"
+fields = ["body:actions[].type=5"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-86 - Manual-triggers-and-AI-suggestions-are-written-password-removal-stays-with-the-web-UI.md"
+reason = "password removal holds passwords, which would go through the chat and could not be shown or kept; the web UI writes it"
+
+[[exclusion]]
+operation = "PATCH /api/workflows/{id}/"
+fields = ["body:actions[].passwords"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-86 - Manual-triggers-and-AI-suggestions-are-written-password-removal-stays-with-the-web-UI.md"

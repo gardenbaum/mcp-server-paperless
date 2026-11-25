@@ -561,3 +561,39 @@ async def test_an_id_of_a_part_is_positive(given: Json) -> None:
     assert "greater than or equal to 1" in await refusal(
         fake(with_workflow()), "get_workflow", **given
     )
+
+
+@pytest.mark.decision("decision-86")
+async def test_a_manual_trigger_and_ai_suggestions_are_created() -> None:
+    state = seeded()
+
+    made = await call(
+        fake(state),
+        "create_workflow",
+        name="By hand",
+        triggers=[{"type": "manual", "has_tags": ["e2e-finance"]}],
+        actions=[
+            {
+                "type": "apply AI suggestions",
+                "ai_suggestion_fields": ["title"],
+                "ai_create_missing": True,
+                "ai_overwrite_existing": True,
+            }
+        ],
+        confirm=True,
+    )
+    wrong = await refusal(
+        fake(state),
+        "create_workflow",
+        name="Wrong",
+        actions=[{"type": 8, "ai_suggestion_fields": ["content"]}],
+    )
+
+    assert [t["type_name"] for t in cast("list[Json]", made["triggers"])] == ["manual"]
+    [action] = cast("list[Json]", made["actions"])
+    assert action["settings"] == {
+        "ai_suggestion_fields": ["title"],
+        "ai_create_missing": True,
+        "ai_overwrite_existing": True,
+    }
+    assert "'title', 'tags', 'correspondent'" in wrong
