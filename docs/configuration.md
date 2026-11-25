@@ -601,8 +601,13 @@ details). An unreachable Paperless does not stop it; the tools report the proble
 Paperless is back.
 
 Logs go to stderr (the server's own records as JSON lines). At INFO and above, the records of tool
-calls hold no arguments, results or error messages, the API token and bearer tokens are not
-logged, and an internal error in a tool is logged by type. Error messages of resources and prompts
-and a failed startup check are logged and can quote a prompt's argument or Paperless's answer;
-DEBUG can log arguments and document content. The full list is in the
+calls, resources and prompts hold no arguments, results or error messages (the exceptions, such as
+the name of an unknown tool and request paths, are in the policy), and the API token and bearer
+tokens are not logged. Errors are logged by type and place in the code, without message or
+traceback, also those that libraries log; a failed startup check is told by a text of this project
+or by type. What a library writes into its own message stays: FastMCP's messages about a failed
+sign-in through an identity provider quote some of its values. `DEBUG` logs the tracebacks, which can
+quote arguments and what Paperless answered, document content included, because an error could not
+be traced without them; arguments can also appear in other records. The answers to the client are
+not logged as a whole, at any level. The full list is in the
 [privacy policy](../PRIVACY.md#what-the-server-logs).
