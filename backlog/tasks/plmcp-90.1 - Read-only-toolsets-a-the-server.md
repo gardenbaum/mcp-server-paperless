@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T12:22:10Z'
-updated_date: '2026-11-25T13:25:14Z'
+updated_date: '2026-11-25T13:54:14Z'
 labels: []
 dependencies: []
 parent_task_id: PLMCP-90
@@ -22,10 +22,10 @@ First part of PLMCP-90: reading mail rules, workflows or views means either offe
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An entry name:read in PAPERLESS_MCP_TOOLSETS offers no tool of that toolset without the read-only hint, local tools and saving downloads included; other toolsets are unchanged
-- [ ] #2 all:read, all with exceptions, an unknown suffix, a toolset both with and without suffix and an unknown name stop the server with a message that says what to write; server-wide read-only mode wins
+- [x] #1 An entry name:read in PAPERLESS_MCP_TOOLSETS offers no tool of that toolset without the read-only hint, local tools and saving downloads included; other toolsets are unchanged
+- [x] #2 all:read, all with exceptions, an unknown suffix, a toolset both with and without suffix and an unknown name stop the server with a message that says what to write; server-wide read-only mode wins
 - [ ] #3 What the assistant is told marks a read-only toolset and the value to set keeps :read; nothing of it is named that is hidden; prompts that need a hidden tool are not offered
-- [ ] #4 A decision records the setting and how it extends decisions 4 and 6; README, configuration, container docs and server.json say it
+- [x] #4 A decision records the setting and how it extends decisions 4 and 6; README, configuration, container docs and server.json say it
 - [ ] #5 Contract tests on the fake and Paperless 3.5.1, tool tests over stdio and HTTP on both protocol eras and E2E cover mixed selections, downloads, prompts and the error messages
 <!-- AC:END -->
 
@@ -60,4 +60,8 @@ Part b (PLMCP-90.2) waits for a release that contains this and a pin of it; noth
 30 hand mutants: 28 killed at once, 1 survivor killed by a new case (bulk-ro), 1 equivalent (another reading of the suffix: anything but :read was refused before).
 
 Owner, 2026-11-25 (relayed by the main agent): 'Alles wie empfohlen' (all as recommended), to 'Anweisungsgrenze 1451 jetzt, nach 89 auf den gemessenen Wert, höchstens 1474' (instructions limit 1451 now, after 89 the measured value, at most 1474); the wording stays.
+
+Review of #170 (3ce7a53), relayed by the main agent: F2, what starts with a toolset's name is suggested with :read (12 tests red first); F3, configuration page; F4, hidden calls must be 'Unknown tool' (a sharper assertion, green at once). Mutant mark=True in server.py is killed by the guide oracle (61 tests of test_toolset_guide, 4 of test_instance_reader). 6 mutants of the new suggestion rule, 3 survivors closed.
+AC 1, 2, 4 proven. AC 3 is not: the instructions, guide and overview name nothing hidden, but descriptions and schemas of offered tools still name hidden tools (decision-97 lists the known cases); the owner decides, the criterion is unchanged. AC 5 stays open: its live part was green on a52f7b2 (E2E 45617913750, except e2e-imap, red on main too), not yet on the final head.
+DoD stays open: just check was not run as a whole, CI and the hosted E2E of the final head are missing.
 <!-- SECTION:NOTES:END -->
