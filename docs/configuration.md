@@ -259,8 +259,9 @@ newest or of a named version. The file stays as it is.
 ### `views`
 
 Off by default: `list_saved_views`, `get_saved_view`, `create_saved_view`, `update_saved_view`
-and `delete_saved_view`, to read and maintain saved views. Running a view is `run_saved_view` in
-`core`.
+and `delete_saved_view`, to read and maintain saved views: name, filter rules, sort order, page
+size, and how the web UI shows them (icon, display mode, display fields; the last two can be put
+back to its default). Running a view is `run_saved_view` in `core`.
 
 ### `trash`
 

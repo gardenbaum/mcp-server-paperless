@@ -66,7 +66,7 @@ from fakes.permissions import access_of, check_principals, set_grants
 from fakes.sharing import FakeShareBundle, FakeShareLink, SentEmail, SharingData, Viewer
 from fakes.taxonomy_rules import check_colour, check_match, check_name, check_path, with_ids
 from fakes.view_filters import ONLY_ONE_SEARCH, combines, searches, view_filters
-from fakes.view_rules import check_page_size, check_rules
+from fakes.view_rules import check_display, check_page_size, check_rules
 from fakes.workflows import Actor, WorkflowData
 from mcp_server_paperless.domain.admin import (
     CONFIG_SECRETS,
@@ -140,7 +140,7 @@ from mcp_server_paperless.domain.trash import (
     TrashPage,
 )
 from mcp_server_paperless.domain.versions import VersionPage, VersionRow
-from mcp_server_paperless.domain.views import FilterRule, SavedView
+from mcp_server_paperless.domain.views import DEFAULT_ICON, FilterRule, SavedView
 from mcp_server_paperless.domain.workflows import (
     Workflow,
     WorkflowAction,
@@ -368,6 +368,17 @@ class FakeSavedView(FakeTaxonomy):
     sort_field: str | None = None
     sort_reverse: bool = False
     page_size: int | None = None
+    icon: str = DEFAULT_ICON
+    display_mode: str | None = None
+    display_fields: tuple[str, ...] | None = None
+
+
+def forget_field(view: FakeSavedView, field: str) -> None:
+    """What a view loses when a custom field is deleted."""
+    if view.display_fields is not None:
+        view.display_fields = tuple(f for f in view.display_fields if f != field)
+    if view.sort_field == field:
+        view.sort_field = "created"
 
 
 @dataclass(kw_only=True)
@@ -2809,6 +2820,8 @@ class FakePaperless:
             state.custom_fields[:] = [f for f in state.custom_fields if f.id != item_id]
             for document in state.documents:
                 _ = document.custom_fields.pop(item_id, None)
+            for view in state.saved_views:  # cleanup_custom_field_deletion
+                forget_field(view, f"custom_field_{item_id}")
             return
         if kind == "tag":
             gone = self._tag_tree(item_id)
@@ -3233,6 +3246,7 @@ class FakePaperless:
         name = check_name(name)
         check_rules(values.filter_rules or ())
         check_page_size(values.page_size)
+        check_display(values, {f.id for f in self.state.custom_fields})
         views = self.state.saved_views
         if any(v.name == name and v.owner == self.user.id for v in views):
             reject("error", "Object violates owner / name unique constraint")
@@ -3244,6 +3258,9 @@ class FakePaperless:
             sort_field=values.sort_field,
             sort_reverse=bool(values.sort_reverse),
             page_size=values.page_size,
+            icon=values.icon or DEFAULT_ICON,
+            display_mode=values.display_mode,
+            display_fields=values.display_fields,
         )
         views.append(view)
         return self._saved_view(view)
@@ -3268,6 +3285,7 @@ class FakePaperless:
         name = check_name(values.name) if values.name is not None else view.name
         check_rules(values.filter_rules or ())
         check_page_size(values.page_size)
+        check_display(values, {f.id for f in self.state.custom_fields})
         view.name = name
         if values.filter_rules is not None:
             view.filter_rules = values.filter_rules
@@ -3277,6 +3295,12 @@ class FakePaperless:
             view.sort_reverse = values.sort_reverse
         if "page_size" in sent:
             view.page_size = values.page_size
+        if values.icon is not None:
+            view.icon = values.icon
+        if "display_mode" in sent:
+            view.display_mode = values.display_mode
+        if "display_fields" in sent:
+            view.display_fields = values.display_fields or None  # an update stores no empty list
         return self._saved_view(view)
 
     @write
@@ -3313,6 +3337,9 @@ class FakePaperless:
             sort_field=view.sort_field,
             sort_reverse=view.sort_reverse,
             page_size=view.page_size,
+            icon=view.icon,
+            display_mode=view.display_mode,
+            display_fields=view.display_fields,
             owner=view.owner,
             user_can_change=self.user.may_change_object(view),
             filter_rules=view.filter_rules,

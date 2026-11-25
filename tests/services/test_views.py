@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, final, override
 import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import (
+    FakeCustomField,
     FakeDocument,
     FakePaperless,
     FakeSavedView,
@@ -21,9 +22,16 @@ from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
     NotFound,
     PermissionDenied,
+    UpstreamUnavailable,
     Validation,
 )
-from mcp_server_paperless.domain.views import FilterRule, RuleInput, ViewCreate, ViewEdit
+from mcp_server_paperless.domain.views import (
+    ICONS,
+    FilterRule,
+    RuleInput,
+    ViewCreate,
+    ViewEdit,
+)
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.filter_rules import translate
@@ -31,6 +39,7 @@ from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.views import ViewService
 
 if TYPE_CHECKING:
+    from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
     from mcp_server_paperless.domain.views import SavedView, ViewValues
 
 pytestmark = [
@@ -38,6 +47,7 @@ pytestmark = [
     pytest.mark.decision("decision-5"),
     pytest.mark.decision("decision-14"),
     pytest.mark.decision("decision-15"),
+    pytest.mark.decision("decision-91"),
 ]
 
 WEB = "https://paperless.example"
@@ -275,6 +285,14 @@ async def test_an_update_can_remove_every_rule_the_sort_and_the_page_size() -> N
         (ViewEdit(), "Nothing to change"),
         (ViewEdit(sort_field="title", clear_sort=True), "sort_field and clear_sort"),
         (ViewEdit(page_size=5, clear_page_size=True), "page_size and clear_page_size"),
+        (
+            ViewEdit(display_mode="table", clear_display_mode=True),
+            "display_mode and clear_display_mode",
+        ),
+        (
+            ViewEdit(display_fields=("title",), clear_display_fields=True),
+            "display_fields and clear_display_fields",
+        ),
         (ViewEdit(name=" "), "name is empty"),
     ],
 )
@@ -500,3 +518,161 @@ async def test_a_single_reference_rule_keeps_a_comma_in_a_name() -> None:
     )
 
     assert [(r.rule_type, r.value) for r in made.rules] == [(3, "2")]
+
+
+async def test_a_created_view_keeps_its_display_settings_and_names_custom_fields() -> None:
+    setup = Setup()
+
+    made = await setup.views.create(
+        ViewCreate(
+            name="shown",
+            icon="heart",
+            display_mode="smallCards",
+            display_fields=("title", "custom_field_1"),
+        )
+    )
+
+    assert (made.icon, made.display_mode) == ("heart", "smallCards")
+    assert [(f.field, f.name) for f in made.display_fields or ()] == [
+        ("title", None),
+        ("custom_field_1", "e2e-string"),
+    ]
+    assert await setup.views.get("shown") == made
+    assert made in (await setup.views.list()).views
+
+
+async def test_a_view_without_display_settings_has_the_defaults_and_sends_none() -> None:
+    made = await Setup().views.create(ViewCreate(name="plain"))
+
+    assert (made.icon, made.display_mode, made.display_fields) == ("funnel", None, None)
+
+
+async def test_an_update_sets_each_display_setting_alone_and_clears_two() -> None:
+    setup = Setup()
+    values = {"icon": "bank", "display_mode": "table", "display_fields": ("asn",)}
+
+    for name, value in values.items():
+        _ = await setup.views.update("e2e-view", ViewEdit.model_validate({name: value}))
+        assert setup.fake.updates[-1].model_dump(exclude_unset=True) == {name: value}
+    cleared = await setup.views.update(
+        "e2e-view", ViewEdit(clear_display_mode=True, clear_display_fields=True)
+    )
+
+    assert setup.fake.updates[-1].model_dump(exclude_unset=True) == {
+        "display_mode": None,
+        "display_fields": None,
+    }
+    assert (cleared.icon, cleared.display_mode, cleared.display_fields) == ("bank", None, None)
+
+
+@pytest.mark.parametrize(
+    ("fields", "error", "message"),
+    [
+        ((), Validation, "display_fields is empty"),
+        (("title", "asn", "title"), Validation, "'title' more than once"),
+        (("nope",), Validation, "'nope'"),
+        (("Title",), Validation, "'Title'"),
+        (("custom_field_",), Validation, "'custom_field_'"),
+        (("xcustom_field_1",), Validation, "'xcustom_field_1'"),
+        (("custom_field_01",), Validation, "'custom_field_01'"),
+        (("custom_field_99",), NotFound, "No custom field has id 99"),
+        (tuple(f"custom_field_{n}" for n in range(1, 52)), Validation, "51 display fields"),
+    ],
+)
+async def test_unusable_display_fields_are_refused_before_anything_is_sent(
+    fields: tuple[str, ...], error: type[Validation | NotFound], message: str
+) -> None:
+    setup = Setup()
+
+    with pytest.raises(error, match=message):
+        _ = await setup.views.create(ViewCreate(name="n", display_fields=fields))
+    with pytest.raises(error, match=message):
+        _ = await setup.views.update("e2e-view", ViewEdit(display_fields=fields))
+
+    assert setup.fake.writes == []
+
+
+async def test_fifty_display_fields_are_taken() -> None:
+    setup = Setup()
+    number = max(f.id for f in setup.state.custom_fields)
+    setup.state.custom_fields += [
+        FakeCustomField(id=number + n, name=f"extra {n}", data_type="string") for n in range(1, 51)
+    ]
+    fields = tuple(f"custom_field_{number + n}" for n in range(1, 51))
+
+    made = await setup.views.create(ViewCreate(name="many", display_fields=fields))
+
+    assert tuple(f.field for f in made.display_fields or ()) == fields
+
+
+async def test_an_unknown_icon_is_refused_with_every_icon() -> None:
+    setup = Setup()
+
+    for wrong in ("nope", "Heart", ""):
+        with pytest.raises(Validation, match=repr(wrong)) as raised:
+            _ = await setup.views.create(ViewCreate(name="n", icon=wrong))
+        assert raised.value.hint is not None
+        assert all(icon in raised.value.hint for icon in ICONS)
+        with pytest.raises(Validation, match=repr(wrong)):
+            _ = await setup.views.update("e2e-view", ViewEdit(icon=wrong))
+
+    assert setup.fake.writes == []
+
+
+async def test_custom_fields_the_user_may_not_view_have_no_name_and_cannot_be_set() -> None:
+    setup = Setup(READER[0], grant=("view_savedview", "add_savedview"))
+    reader = setup.fake.user
+    setup.fake.user = replace(reader, permissions=reader.permissions - {"view_customfield"})
+    setup.state.saved_views.append(
+        FakeSavedView(
+            id=9, name="shared", owner=None, display_fields=("custom_field_1", "custom_field_99")
+        )
+    )
+
+    [view] = (await setup.views.list()).views
+
+    assert [(f.field, f.name) for f in view.display_fields or ()] == [
+        ("custom_field_1", None),
+        ("custom_field_99", None),
+    ]
+    with pytest.raises(PermissionDenied):
+        _ = await setup.views.create(ViewCreate(name="n", display_fields=("custom_field_1",)))
+    assert setup.fake.writes == []
+
+
+class Unreadable(Recording):
+    """Custom fields cannot be read; everything else can."""
+
+    @override
+    async def list_taxonomy(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
+        if kind == "custom_field":
+            message = "down"
+            raise UpstreamUnavailable(message)
+        return await super().list_taxonomy(kind)
+
+
+async def test_a_write_is_reported_also_when_the_names_of_custom_fields_cannot_be_read() -> None:
+    setup = Setup()
+    setup.view("e2e-view").display_fields = ("custom_field_1",)
+    fake = Unreadable(setup.state, user=ADMIN[0], writes=True)
+    resolver = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
+    views = ViewService(fake, fake, resolver, setup.documents)
+
+    after = await views.update("e2e-view", ViewEdit(icon="heart"))
+
+    assert after.icon == "heart"
+    assert [(f.field, f.name) for f in after.display_fields or ()] == [("custom_field_1", None)]
+
+
+async def test_a_deleted_custom_field_is_shown_without_a_name_and_does_not_block_other_edits() -> (
+    None
+):
+    setup = Setup()
+    setup.view("e2e-view").display_fields = ("custom_field_99", "title")
+
+    after = await setup.views.update("e2e-view", ViewEdit(icon="heart"))
+
+    assert [(f.field, f.name) for f in after.display_fields or ()] == [
+        ("custom_field_99", None),
+        ("title", None),
+    ]

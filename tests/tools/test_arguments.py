@@ -27,7 +27,7 @@ from fastmcp import Client
 from harness import serve
 
 from mcp_server_paperless.domain.admin import CONFIG_READ_ONLY, CONFIG_SETTINGS
-from mcp_server_paperless.domain.views import FilterRule
+from mcp_server_paperless.domain.views import ICONS, FilterRule
 from mcp_server_paperless.domain.workflows import Workflow, WorkflowAction, WorkflowTrigger
 from mcp_server_paperless.services.batch_uploads import cursor
 from mcp_server_paperless.services.documents import text_state
@@ -967,8 +967,12 @@ async def test_saved_views_take_every_rule_type_and_are_run() -> None:
     created: list[tuple[Json, Prepare | None]] = []
     updated: list[tuple[Json, Prepare | None]] = []
     ran: list[tuple[Json, Prepare | None]] = []
-    for number, spec in SPECS.items():
+    for position, (number, spec) in enumerate(SPECS.items()):
         value = SAMPLES[spec.kind]
+        shown: Json = {
+            "display_mode": ("table", "smallCards", "largeCards")[position % 3],
+            "display_fields": ["title", "custom_field_1"],
+        }
         rules = [{"rule": number, "value": value}]
         created.append(
             (
@@ -978,6 +982,7 @@ async def test_saved_views_take_every_rule_type_and_are_run() -> None:
                     "sort_field": "created",
                     "sort_reverse": True,
                     "page_size": 10,
+                    **shown,
                 },
                 None,
             )
@@ -990,15 +995,21 @@ async def test_saved_views_take_every_rule_type_and_are_run() -> None:
                     "sort_field": "added",
                     "sort_reverse": True,
                     "page_size": 10,
+                    **shown,
                 },
                 None,
             )
         )
         ran.append(({"view": 2, "page": 1, "page_size": 10}, with_view(number, value)))
+    # More icons than rule types: every one is sent.
+    created.extend(({"name": "New", "icon": icon}, None) for icon in ICONS)
+    updated.extend(({"view": 1, "icon": icon}, None) for icon in ICONS)
     await sweep_cases("create_saved_view", created)
     await sweep_cases("update_saved_view", updated)
     await sweep_cases("run_saved_view", ran)
     await sweep("update_saved_view", {"view": 1, "clear_sort": True, "clear_page_size": True}, ())
+    cleared: Json = {"view": 1, "clear_display_mode": True, "clear_display_fields": True}
+    await sweep("update_saved_view", cleared, ())
     await sweep("list_saved_views", {}, ())
     await sweep("get_saved_view", {"view": 1}, ())
     await sweep("delete_saved_view", {"view": 1}, ())

@@ -4317,6 +4317,50 @@
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
+          'display_fields': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Fields the web UI shows of each document, in order: title, created, added, tag, correspondent, documenttype, storagepath, note, owner, shared, asn, pagecount, custom_field_<id>.',
+          }),
+          'display_mode': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'table',
+                  'smallCards',
+                  'largeCards',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'How the web UI shows the view.',
+          }),
+          'icon': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Icon name, e.g. inbox, receipt, people; a wrong one lists them all.',
+          }),
           'name': dict({
             'description': 'A name not yet taken.',
             'maxLength': 128,
@@ -4417,6 +4461,56 @@
             'description': 'Whether the current user may change it.',
             'type': 'boolean',
           }),
+          'display_fields': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'description': 'A document field a view shows.',
+                  'properties': dict({
+                    'field': dict({
+                      'description': "As stored, e.g. 'title' or 'custom_field_3'.",
+                      'type': 'string',
+                    }),
+                    'name': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'The name of a custom field where it can be read.',
+                    }),
+                  }),
+                  'required': list([
+                    'field',
+                    'name',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'What the web UI shows of each document; null: the default.',
+          }),
+          'display_mode': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'table, smallCards or largeCards; null: the default.',
+          }),
+          'icon': dict({
+            'type': 'string',
+          }),
           'id': dict({
             'type': 'integer',
           }),
@@ -4499,6 +4593,9 @@
           'sort_field',
           'sort_reverse',
           'page_size',
+          'icon',
+          'display_mode',
+          'display_fields',
           'owner',
           'can_change',
           'rules',
@@ -12593,7 +12690,7 @@
         'title': 'Get saved view',
       }),
       'description': '''
-        Read one saved view with its filter rules, sort order and page size.
+        Read one saved view with its filter rules, sort order and display settings.
         
         The view matches by exact name, then ignoring case and accents, or by id; an unknown or
         ambiguous name is an error that lists the closest names or candidates.
@@ -12625,6 +12722,56 @@
           'can_change': dict({
             'description': 'Whether the current user may change it.',
             'type': 'boolean',
+          }),
+          'display_fields': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'description': 'A document field a view shows.',
+                  'properties': dict({
+                    'field': dict({
+                      'description': "As stored, e.g. 'title' or 'custom_field_3'.",
+                      'type': 'string',
+                    }),
+                    'name': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'The name of a custom field where it can be read.',
+                    }),
+                  }),
+                  'required': list([
+                    'field',
+                    'name',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'What the web UI shows of each document; null: the default.',
+          }),
+          'display_mode': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'table, smallCards or largeCards; null: the default.',
+          }),
+          'icon': dict({
+            'type': 'string',
           }),
           'id': dict({
             'type': 'integer',
@@ -12708,6 +12855,9 @@
           'sort_field',
           'sort_reverse',
           'page_size',
+          'icon',
+          'display_mode',
+          'display_fields',
           'owner',
           'can_change',
           'rules',
@@ -15868,6 +16018,56 @@
                   'description': 'Whether the current user may change it.',
                   'type': 'boolean',
                 }),
+                'display_fields': dict({
+                  'anyOf': list([
+                    dict({
+                      'items': dict({
+                        'description': 'A document field a view shows.',
+                        'properties': dict({
+                          'field': dict({
+                            'description': "As stored, e.g. 'title' or 'custom_field_3'.",
+                            'type': 'string',
+                          }),
+                          'name': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'null',
+                              }),
+                            ]),
+                            'description': 'The name of a custom field where it can be read.',
+                          }),
+                        }),
+                        'required': list([
+                          'field',
+                          'name',
+                        ]),
+                        'type': 'object',
+                      }),
+                      'type': 'array',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'What the web UI shows of each document; null: the default.',
+                }),
+                'display_mode': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'table, smallCards or largeCards; null: the default.',
+                }),
+                'icon': dict({
+                  'type': 'string',
+                }),
                 'id': dict({
                   'type': 'integer',
                 }),
@@ -15950,6 +16150,9 @@
                 'sort_field',
                 'sort_reverse',
                 'page_size',
+                'icon',
+                'display_mode',
+                'display_fields',
                 'owner',
                 'can_change',
                 'rules',
@@ -26921,6 +27124,16 @@
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
+          'clear_display_fields': dict({
+            'default': False,
+            'description': "Back to the web UI's default fields.",
+            'type': 'boolean',
+          }),
+          'clear_display_mode': dict({
+            'default': False,
+            'description': "Back to the web UI's default display mode.",
+            'type': 'boolean',
+          }),
           'clear_page_size': dict({
             'default': False,
             'description': 'Remove the page size.',
@@ -26930,6 +27143,50 @@
             'default': False,
             'description': 'Remove the sort field.',
             'type': 'boolean',
+          }),
+          'display_fields': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Fields the web UI shows of each document, in order: title, created, added, tag, correspondent, documenttype, storagepath, note, owner, shared, asn, pagecount, custom_field_<id>.',
+          }),
+          'display_mode': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'table',
+                  'smallCards',
+                  'largeCards',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'How the web UI shows the view.',
+          }),
+          'icon': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Icon name, e.g. inbox, receipt, people; a wrong one lists them all.',
           }),
           'name': dict({
             'anyOf': list([
@@ -27055,6 +27312,56 @@
             'description': 'Whether the current user may change it.',
             'type': 'boolean',
           }),
+          'display_fields': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'description': 'A document field a view shows.',
+                  'properties': dict({
+                    'field': dict({
+                      'description': "As stored, e.g. 'title' or 'custom_field_3'.",
+                      'type': 'string',
+                    }),
+                    'name': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'The name of a custom field where it can be read.',
+                    }),
+                  }),
+                  'required': list([
+                    'field',
+                    'name',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'What the web UI shows of each document; null: the default.',
+          }),
+          'display_mode': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'table, smallCards or largeCards; null: the default.',
+          }),
+          'icon': dict({
+            'type': 'string',
+          }),
           'id': dict({
             'type': 'integer',
           }),
@@ -27137,6 +27444,9 @@
           'sort_field',
           'sort_reverse',
           'page_size',
+          'icon',
+          'display_mode',
+          'display_fields',
           'owner',
           'can_change',
           'rules',
@@ -41083,7 +41393,7 @@
         'title': 'Get saved view',
       }),
       'description': '''
-        Read one saved view with its filter rules, sort order and page size.
+        Read one saved view with its filter rules, sort order and display settings.
         
         The view matches by exact name, then ignoring case and accents, or by id; an unknown or
         ambiguous name is an error that lists the closest names or candidates.
@@ -41115,6 +41425,56 @@
           'can_change': dict({
             'description': 'Whether the current user may change it.',
             'type': 'boolean',
+          }),
+          'display_fields': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'description': 'A document field a view shows.',
+                  'properties': dict({
+                    'field': dict({
+                      'description': "As stored, e.g. 'title' or 'custom_field_3'.",
+                      'type': 'string',
+                    }),
+                    'name': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'The name of a custom field where it can be read.',
+                    }),
+                  }),
+                  'required': list([
+                    'field',
+                    'name',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'What the web UI shows of each document; null: the default.',
+          }),
+          'display_mode': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'table, smallCards or largeCards; null: the default.',
+          }),
+          'icon': dict({
+            'type': 'string',
           }),
           'id': dict({
             'type': 'integer',
@@ -41198,6 +41558,9 @@
           'sort_field',
           'sort_reverse',
           'page_size',
+          'icon',
+          'display_mode',
+          'display_fields',
           'owner',
           'can_change',
           'rules',
@@ -43907,6 +44270,56 @@
                   'description': 'Whether the current user may change it.',
                   'type': 'boolean',
                 }),
+                'display_fields': dict({
+                  'anyOf': list([
+                    dict({
+                      'items': dict({
+                        'description': 'A document field a view shows.',
+                        'properties': dict({
+                          'field': dict({
+                            'description': "As stored, e.g. 'title' or 'custom_field_3'.",
+                            'type': 'string',
+                          }),
+                          'name': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'null',
+                              }),
+                            ]),
+                            'description': 'The name of a custom field where it can be read.',
+                          }),
+                        }),
+                        'required': list([
+                          'field',
+                          'name',
+                        ]),
+                        'type': 'object',
+                      }),
+                      'type': 'array',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'What the web UI shows of each document; null: the default.',
+                }),
+                'display_mode': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'table, smallCards or largeCards; null: the default.',
+                }),
+                'icon': dict({
+                  'type': 'string',
+                }),
                 'id': dict({
                   'type': 'integer',
                 }),
@@ -43989,6 +44402,9 @@
                 'sort_field',
                 'sort_reverse',
                 'page_size',
+                'icon',
+                'display_mode',
+                'display_fields',
                 'owner',
                 'can_change',
                 'rules',

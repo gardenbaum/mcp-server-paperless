@@ -1,13 +1,12 @@
 """ViewReader and ViewWriter on ``/api/saved_views/``.
 
 Paperless filters the list by the user's permissions and answers 403 to a user without the global
-``view_savedview`` permission. The display settings of the web UI (icon, display mode and fields)
-never leave this module.
+``view_savedview`` permission.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, cast
 
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator
 
 from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError
 from mcp_server_paperless.domain.views import FilterRule, SavedView
@@ -25,12 +24,20 @@ class _Rule(BaseModel):
     value: str | None = None
 
 
+def _list_or_none(value: object) -> object:
+    """Paperless checks ``display_fields`` by iterating: it also stores a text or an object."""
+    return cast("object", value) if isinstance(value, list) else None
+
+
 class _Row(BaseModel):
     id: int
     name: str
     sort_field: str | None
     sort_reverse: bool
     page_size: int | None
+    icon: str
+    display_mode: str | None
+    display_fields: Annotated[tuple[str, ...] | None, BeforeValidator(_list_or_none)]
     owner: int | None
     user_can_change: bool
     filter_rules: list[_Rule]
@@ -43,6 +50,9 @@ def _view(row: _Row) -> SavedView:
         sort_field=row.sort_field,
         sort_reverse=row.sort_reverse,
         page_size=row.page_size,
+        icon=row.icon,
+        display_mode=row.display_mode,
+        display_fields=row.display_fields,
         owner=row.owner,
         user_can_change=row.user_can_change,
         filter_rules=tuple(
@@ -67,9 +77,12 @@ def _body(values: ViewValues) -> dict[str, object]:
         body["filter_rules"] = [
             {"rule_type": rule.rule_type, "value": rule.value} for rule in values.filter_rules
         ]
-    for name in ("sort_field", "sort_reverse", "page_size"):
+    for name in ("sort_field", "sort_reverse", "page_size", "icon", "display_mode"):
         if name in sent:
             body[name] = getattr(values, name)
+    if "display_fields" in sent:
+        fields = values.display_fields
+        body["display_fields"] = None if fields is None else list(fields)
     return body
 
 

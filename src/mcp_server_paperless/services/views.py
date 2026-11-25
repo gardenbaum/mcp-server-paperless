@@ -6,6 +6,7 @@ Writes act on the views read right before, not on the resolver's cache, and forg
 saved views afterwards, whatever happened.
 """
 
+import contextlib
 import difflib
 from typing import TYPE_CHECKING, Final
 
@@ -13,19 +14,25 @@ from mcp_server_paperless.domain.documents import NameFilters
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
     NotFound,
+    PaperlessMcpError,
     PermissionDenied,
     Validation,
     quoted,
 )
 from mcp_server_paperless.domain.taxonomy import TaxonomyItem
 from mcp_server_paperless.domain.views import (
+    DISPLAY_FIELDS,
+    ICONS,
+    MAX_DISPLAY_FIELDS,
     RULE_TYPES,
+    DisplayField,
     FilterRule,
     RuleInfo,
     SavedViewInfo,
     SavedViewListing,
     ViewDeletion,
     ViewValues,
+    display_field_id,
 )
 from mcp_server_paperless.services.filter_rules import check_sort, translate
 from mcp_server_paperless.services.taxonomy import fold, pick
@@ -52,6 +59,15 @@ VALUE_KINDS: Final[Mapping[int, TaxonomyKind]] = {
 # "Correspondent is" and its siblings: no value is "not assigned", -1 is "assigned".
 NULLABLE: Final = frozenset({3, 4, 25})
 SUGGESTIONS: Final = 5
+# The settings of the web UI beside the page size.
+DISPLAY: Final = frozenset({"icon", "display_mode", "display_fields"})
+# The settings that can be removed, and the argument that says so.
+CLEARED_BY: Final[Mapping[str, str]] = {
+    "sort_field": "clear_sort",
+    "page_size": "clear_page_size",
+    "display_mode": "clear_display_mode",
+    "display_fields": "clear_display_fields",
+}
 
 
 def plural(count: int, noun: str) -> str:
@@ -63,14 +79,22 @@ def _described(view: SavedView) -> str:
     return f"saved view {quoted(view.name)} (id {view.id})"
 
 
-def info(view: SavedView) -> SavedViewInfo:
-    """The view as tools show it, its rule types with labels."""
+def info(view: SavedView, field_names: Mapping[int, str]) -> SavedViewInfo:
+    """The view as tools show it, its rule types with labels, custom fields with their names."""
+    fields = view.display_fields
     return SavedViewInfo(
         id=view.id,
         name=view.name,
         sort_field=view.sort_field,
         sort_reverse=view.sort_reverse,
         page_size=view.page_size,
+        icon=view.icon,
+        display_mode=view.display_mode,
+        display_fields=None
+        if fields is None
+        else tuple(
+            DisplayField(field=f, name=field_names.get(display_field_id(f) or 0)) for f in fields
+        ),
         owner=view.owner,
         can_change=view.user_can_change,
         rules=tuple(
@@ -82,6 +106,22 @@ def info(view: SavedView) -> SavedViewInfo:
             for rule in view.filter_rules
         ),
     )
+
+
+def cleared(edit: ViewEdit) -> dict[str, None]:
+    """The settings ``edit`` removes.
+
+    Raises:
+        Validation: A setting is given and removed at once.
+    """
+    found: dict[str, None] = {}
+    for name, clear in CLEARED_BY.items():
+        if getattr(edit, clear):
+            if getattr(edit, name) is not None:
+                message = f"{name} and {clear} contradict each other."
+                raise Validation(message, hint="Pass one of them.")
+            found[name] = None
+    return found
 
 
 def rule_type(value: int | str) -> int:
@@ -128,7 +168,7 @@ class ViewService:
             PermissionDenied: The user may not view saved views.
         """
         views = await self._reader.list_saved_views()
-        return SavedViewListing(count=len(views), views=tuple(info(v) for v in views))
+        return SavedViewListing(count=len(views), views=await self._infos(*views))
 
     async def get(self, view: NameOrId) -> SavedViewInfo:
         """The view that ``view`` (a name or an id) names.
@@ -138,7 +178,8 @@ class ViewService:
             Ambiguous: The name matches several views.
             PermissionDenied: The user may not view saved views.
         """
-        return info(await self._find(view))
+        [shown] = await self._infos(await self._find(view))
+        return shown
 
     async def create(self, spec: ViewCreate) -> SavedViewInfo:
         """Create a view; rules are checked as ``run`` would read them before anything is sent.
@@ -155,13 +196,18 @@ class ViewService:
         _ = translate(rules)
         if spec.sort_field is not None:
             check_sort(spec.sort_field)
-        values = ViewValues(
-            filter_rules=rules,
-            sort_field=spec.sort_field,
-            sort_reverse=spec.sort_reverse,
-            page_size=spec.page_size,
-        )
-        return info(await self._write(lambda: self._writer.create_saved_view(name, values)))
+        await self._check_display(spec)
+        settings: dict[str, object] = {
+            "filter_rules": rules,
+            "sort_field": spec.sort_field,
+            "sort_reverse": spec.sort_reverse,
+            "page_size": spec.page_size,
+        }
+        display = spec.model_dump(include=set(DISPLAY), exclude_none=True)
+        values = ViewValues.model_validate(settings | display)
+        made = await self._write(lambda: self._writer.create_saved_view(name, values))
+        [shown] = await self._infos(made)
+        return shown
 
     async def update(self, view: NameOrId, edit: ViewEdit) -> SavedViewInfo:
         """Change the named settings of a view; new rules replace all old ones.
@@ -172,12 +218,6 @@ class ViewService:
             Ambiguous: A name matches several views or objects.
             PermissionDenied: The user may not change saved views, or this one.
         """
-        if edit.sort_field is not None and edit.clear_sort:
-            message = "sort_field and clear_sort contradict each other."
-            raise Validation(message, hint="Pass one of them.")
-        if edit.page_size is not None and edit.clear_page_size:
-            message = "page_size and clear_page_size contradict each other."
-            raise Validation(message, hint="Pass one of them.")
         found = self._changeable(await self._find(view))
         changes: dict[str, object] = {}
         if edit.name is not None:
@@ -185,21 +225,20 @@ class ViewService:
             await self._free(str(changes["name"]), except_id=found.id)
         if edit.rules is not None:
             changes["filter_rules"] = await self._rules(edit.rules)
-        if edit.sort_field is not None or edit.clear_sort:
-            changes["sort_field"] = edit.sort_field  # None when cleared: both together are refused
-        if edit.sort_reverse is not None:
-            changes["sort_reverse"] = edit.sort_reverse
-        if edit.page_size is not None or edit.clear_page_size:
-            changes["page_size"] = edit.page_size  # None when cleared: both together are refused
+        kept = {"sort_field", "sort_reverse", "page_size", *DISPLAY}
+        changes |= edit.model_dump(include=kept, exclude_none=True) | cleared(edit)
         if not changes:
             message = "Nothing to change: no setting was named."
-            raise Validation(message, hint="Name a new name, rules, sort_field or page_size.")
+            raise Validation(message, hint="Name a setting to change or to clear.")
         values = ViewValues.model_validate(changes)
         # Only what the edit sets is checked: a view with a bad sort can still be renamed.
         _ = translate(values.filter_rules or ())
         if edit.sort_field is not None:
             check_sort(edit.sort_field)
-        return info(await self._write(lambda: self._writer.update_saved_view(found.id, values)))
+        await self._check_display(edit)
+        made = await self._write(lambda: self._writer.update_saved_view(found.id, values))
+        [shown] = await self._infos(made)
+        return shown
 
     async def delete(self, view: NameOrId, *, confirm: bool) -> ViewDeletion:
         """Delete a view for good; without ``confirm`` refuse and say what deleting it does.
@@ -245,6 +284,43 @@ class ViewService:
         """
         found = await self._find(view)
         return translate(found.filter_rules, found.sort_field, sort_reverse=found.sort_reverse)
+
+    async def _infos(self, *views: SavedView) -> tuple[SavedViewInfo, ...]:
+        """The views as tools show them; custom fields are only looked up if a view shows one."""
+        shown = [field for view in views for field in view.display_fields or ()]
+        names: dict[int, str] = {}
+        if any(display_field_id(field) for field in shown):
+            # What was written stays written: a failed lookup costs only the names.
+            with contextlib.suppress(PaperlessMcpError):
+                names = {item.id: item.name for item in await self._taxonomy.items("custom_field")}
+        return tuple(info(view, names) for view in views)
+
+    async def _check_display(self, given: ViewCreate | ViewEdit) -> None:
+        """Refuse an icon or display fields Paperless rejects, fails on or stores for nothing."""
+        if given.icon is not None and given.icon not in ICONS:
+            message = f"No icon of saved views is called {given.icon!r}."
+            raise Validation(message, hint=f"Use one of {', '.join(ICONS)}.")
+        fields = given.display_fields
+        if fields is None:
+            return
+        if not fields:
+            message = "display_fields is empty."
+            raise Validation(message, hint="Name fields; update_saved_view can clear them.")
+        if len(fields) > MAX_DISPLAY_FIELDS:
+            message = f"{len(fields)} display fields are more than {MAX_DISPLAY_FIELDS}."
+            raise Validation(message, hint="Name fewer fields.")
+        for position, field in enumerate(fields):
+            if field in fields[:position]:
+                message = f"display_fields names {field!r} more than once."
+                raise Validation(message, hint="Name each field once.")
+            number = display_field_id(field)
+            if number is not None:
+                _ = await self._taxonomy.resolve("custom_field", number)
+            elif field not in DISPLAY_FIELDS:
+                message = f"No display field is called {field!r}."
+                raise Validation(
+                    message, hint=f"Use {', '.join(DISPLAY_FIELDS)} or custom_field_<id>."
+                )
 
     async def _find(self, view: NameOrId) -> SavedView:
         views = await self._reader.list_saved_views()

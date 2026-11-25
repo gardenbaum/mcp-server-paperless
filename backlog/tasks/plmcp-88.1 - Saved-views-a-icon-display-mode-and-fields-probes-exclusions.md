@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T10:18:26Z'
-updated_date: '2026-11-25T10:18:29Z'
+updated_date: '2026-11-25T10:32:41Z'
 labels:
   - views
 dependencies: []
@@ -50,4 +50,9 @@ First part of PLMCP-88: icon, display_mode and display_fields of a saved view ca
 
 <!-- SECTION:NOTES:BEGIN -->
 Owner's words (2026-11-24, question dialog 'Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?'): 'Alle wie empfohlen' (all as recommended).
+
+Probes: CI run 45594222648, job 139135939753, commit c549208 (tests/e2e/test_view_probes.py, deleted afterwards). P1 to P4 as designed, P5 read in the source of v3.5.1; details in decision-91. New: Paperless takes a deleted custom field out of views (fake and contract test follow).
+Red first: domain, service and contract modules failed to import, adapter 8, tool 2 tests red, then green; the contract test for deleted custom fields red on the fake. E2E written before its first hosted run. 26 hand mutants, 1 survived (a duplicate check, deleted).
+Deliberate: surface and message snapshots; hint of "Nothing to change". Guide limit unchanged.
+just check was not run as a whole locally.
 <!-- SECTION:NOTES:END -->

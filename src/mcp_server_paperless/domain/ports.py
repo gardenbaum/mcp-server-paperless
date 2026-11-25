@@ -697,7 +697,8 @@ class ViewWriter(Protocol):
         Raises:
             PermissionDenied: The user may not add saved views.
             Validation: Paperless rejected a value (blank or taken name, unknown rule type, a
-                rule value over 255 characters, a page size below 1).
+                rule value over 255 characters, a page size below 1, an unknown icon or display
+                field).
         """
         ...
 
@@ -705,7 +706,7 @@ class ViewWriter(Protocol):
         """Change the settings ``values`` sets and return the view as it is afterwards.
 
         Paperless replaces the rule list as a whole and, unlike a create, accepts a name another
-        view of the user already has.
+        view of the user already has and stores an empty list of display fields as none.
 
         Raises:
             NotFound: No such view, or the user may not see it.
