@@ -261,9 +261,8 @@ async def test_a_mail_without_attachments_is_imported_itself_again(
     assert {row["status"] for row in rows} == {"SUCCESS", "PROCESSED_WO_CONSUMPTION"}
     assert FLAGGED in box.flags(uid)
     [empty] = [row for row in rows if row["status"] == "PROCESSED_WO_CONSUMPTION"]
-    assert "the mail itself and the files the rule takes from it are imported" in str(
-        (await record(client, empty))["refetch"]
-    )
+    said = str((await record(client, empty))["refetch"])
+    assert "the mail itself and the files the rule takes from it are imported" in said
     box.unflag(uid, FLAGGED)
     box.forget(*(num(row["id"]) for row in rows))
     assert box.fetch() == 1
