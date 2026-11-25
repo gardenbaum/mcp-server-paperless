@@ -226,8 +226,10 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "bulk": ("test_bulk_items", "test_read_documents", "test_selection"),
     "page_ranges": ("test_pages", "test_pdf"),
     "pages": ("test_pages_files",),
-    # inspect_pdf and insert_pages.
-    "pdf": ("test_pages", "test_pdf_insert"),
+    # inspect_pdf, insert_pages, and the steps of the composed operations.
+    "pdf": ("test_pages", "test_pdf_insert", "test_pdf_steps"),
+    "pdf_insert": ("test_pdf_steps",),
+    "pdf_parts": ("test_pdf", "test_pdf_steps"),
     # The renderer (rendering/ and domain/rendering.py).
     "rendering": ("test_pages", "test_pages_files", "test_pdf_insert"),
     "fields": ("test_pages", "test_pages_files", "test_pdf_insert"),

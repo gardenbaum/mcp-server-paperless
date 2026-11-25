@@ -343,8 +343,8 @@ def test_the_scope_command_prints_the_job_outputs_for_a_toolset_change() -> None
     assert code == 0
     lines = out.splitlines()
     assert lines[0] == "mode=fast"
-    names = [contract("test_pdf"), contract("test_pdf_insert")]
-    names += [e2e("test_pages"), e2e("test_pdf"), e2e("test_pdf_insert")]
+    names = [contract("test_pdf"), contract("test_pdf_insert"), contract("test_pdf_steps")]
+    names += [e2e("test_pages"), e2e("test_pdf"), e2e("test_pdf_insert"), e2e("test_pdf_steps")]
     assert lines[1] == f"targets={STDIO} {' '.join(names)}"
 
 

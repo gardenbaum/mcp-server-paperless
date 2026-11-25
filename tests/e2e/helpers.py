@@ -300,12 +300,17 @@ def consume(
         files={"document": (filename or f"{title}.pdf", content, mime_type)},
     ).raise_for_status()
     task_id = str(parse(uploaded))
+    return task_id, settled(api, task_id, title)
+
+
+def settled(api: httpx2.Client, task_id: str, title: str) -> int | None:
+    """Wait until the task that consumes `title` ended; what it made, None if it failed."""
     deadline = time.monotonic() + CONSUME_TIMEOUT
     while time.monotonic() < deadline:
         tasks = results(api.get("/api/tasks/", params={"task_id": task_id}).raise_for_status())
         if tasks and tasks[0]["status"] in {"success", "failure", "revoked"}:
             related = seq(tasks[0]["related_document_ids"])
-            return task_id, num(related[0]) if related else None
+            return num(related[0]) if related else None
         time.sleep(1)
     pytest.fail(f"Consuming {title!r} timed out after {CONSUME_TIMEOUT:.0f}s. Logs: `{LOGS_HINT}`")
 

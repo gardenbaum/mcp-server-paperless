@@ -41,6 +41,7 @@ from e2e.helpers import (
 from fakes.accounts import ADMIN, BLIND, READER
 from fakes.mail import FakeMailAccount, FakeProcessedMail
 from fakes.paperless import (
+    BROKEN_PDF,
     VERSION,
     FakeDocument,
     FakePaperless,
@@ -706,7 +707,7 @@ def live_task(stack: Stack, *, succeed: bool) -> tuple[str, int | None]:
     """
     title = f"contract-task-{uuid.uuid4().hex}"
     if not succeed:
-        return consume(stack.admin, title, b"%PDF-1.4 broken")
+        return consume(stack.admin, title, BROKEN_PDF)
     return consume(
         stack.admin, title, title.encode(), filename=f"{title}.txt", mime_type="text/plain"
     )
