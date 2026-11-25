@@ -50,7 +50,7 @@ Limits.
 | `GET /api/correspondents/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/correspondents/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/correspondents/{id}/` |  | PLMCP-83 |
-| `GET /api/custom_fields/` | `bulk_edit_documents`, `create_workflow`, `delete_taxonomy_item`, `get_document`, `get_trash_entry` and 10 more |  |
+| `GET /api/custom_fields/` | `bulk_edit_documents`, `create_saved_view`, `create_workflow`, `delete_taxonomy_item`, `get_document` and 11 more |  |
 | `POST /api/custom_fields/` | `create_taxonomy_item` |  |
 | `DELETE /api/custom_fields/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/custom_fields/{id}/` | `update_taxonomy_item` |  |
@@ -137,7 +137,7 @@ Limits.
 | `DELETE /api/saved_views/{id}/` | `delete_saved_view` |  |
 | `GET /api/saved_views/{id}/` |  | PLMCP-88 |
 | `PATCH /api/saved_views/{id}/` | `update_saved_view` |  |
-| `PUT /api/saved_views/{id}/` |  | PLMCP-88 |
+| `PUT /api/saved_views/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-91 - Saved-views-display-settings-are-checked-here-grants-go-through-set_permissions-PUT-and-list-options-stay-out.md) |
 | `GET /api/search/` |  | PLMCP-83 |
 | `GET /api/search/autocomplete/` |  | PLMCP-83 |
 | `GET /api/share_link_bundles/` | `list_share_bundles` |  |
@@ -258,9 +258,9 @@ TOML file.
 | `POST /api/mail_accounts/{id}/process/` | `body:account_type`, `body:expiration`, `body:owner`, `body:set_permissions` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `POST /api/mail_rules/` | `body:set_permissions` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `PATCH /api/mail_rules/{id}/` | `body:set_permissions` | PLMCP-81.5 |
-| `GET /api/saved_views/` | `query:full_perms`, `query:ordering` | PLMCP-88 |
-| `POST /api/saved_views/` | `body:display_fields`, `body:display_mode`, `body:icon`, `body:owner`, `body:set_permissions` | PLMCP-88 |
-| `PATCH /api/saved_views/{id}/` | `body:display_fields`, `body:display_mode`, `body:icon`, `body:owner`, `body:set_permissions` | PLMCP-88 |
+| `GET /api/saved_views/` | `query:full_perms`, `query:ordering` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-91 - Saved-views-display-settings-are-checked-here-grants-go-through-set_permissions-PUT-and-list-options-stay-out.md) |
+| `POST /api/saved_views/` | `body:owner`, `body:set_permissions` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-91 - Saved-views-display-settings-are-checked-here-grants-go-through-set_permissions-PUT-and-list-options-stay-out.md) |
+| `PATCH /api/saved_views/{id}/` | `body:owner`, `body:set_permissions` | PLMCP-88 |
 | `GET /api/share_link_bundles/` | `query:created__date__gt`, `query:created__date__gte`, `query:created__date__lt`, `query:created__date__lte`, `query:created__day`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:created__month`, `query:created__year`, `query:documents`, `query:expiration__date__gt`, `query:expiration__date__gte`, `query:expiration__date__lt`, `query:expiration__date__lte`, `query:expiration__day`, `query:expiration__gt`, `query:expiration__gte`, `query:expiration__lt`, `query:expiration__lte`, `query:expiration__month`, `query:expiration__year`, `query:ordering`, `query:status` | PLMCP-83 |
 | `POST /api/share_link_bundles/{id}/rebuild/` | `body:document_ids`, `body:expiration_days`, `body:file_version` | PLMCP-83 |
 | `GET /api/share_links/` | `query:created__date__gt`, `query:created__date__gte`, `query:created__date__lt`, `query:created__date__lte`, `query:created__day`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:created__month`, `query:created__year`, `query:expiration__date__gt`, `query:expiration__date__gte`, `query:expiration__date__lt`, `query:expiration__date__lte`, `query:expiration__day`, `query:expiration__gt`, `query:expiration__gte`, `query:expiration__lt`, `query:expiration__lte`, `query:expiration__month`, `query:expiration__year`, `query:ordering` | PLMCP-83 |
