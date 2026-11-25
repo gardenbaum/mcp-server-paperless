@@ -149,7 +149,7 @@ def _outcome(status: str, rule: MailRule) -> str:
     )
 
 
-def _same_folder(one: str, other: str) -> bool:
+def same_folder(one: str, other: str) -> bool:
     """Whether a mail server means the same folder: INBOX has no case, the others may."""
     return one == other or one.upper() == other.upper() == "INBOX"
 
@@ -159,7 +159,7 @@ def _obstacles(mail: ProcessedMail, rule: MailRule) -> str:
     said = ""
     if not rule.enabled:
         said += "The rule is disabled: it fetches nothing until it is switched on. "
-    if not _same_folder(rule.folder, mail.folder):
+    if not same_folder(rule.folder, mail.folder):
         folders = f"{quoted(rule.folder)}, not {quoted(mail.folder)}"
         said += f"The rule now reads folder {folders}: it does not look at this mail while so. "
     return said

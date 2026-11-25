@@ -58,6 +58,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.files import FileService
     from mcp_server_paperless.services.instance import InstanceService
     from mcp_server_paperless.services.mail import MailService
+    from mcp_server_paperless.services.mail_explanation import MailExplanations
     from mcp_server_paperless.services.notes import NoteService
     from mcp_server_paperless.services.pages import PageService
     from mcp_server_paperless.services.pdf import PdfService
@@ -217,6 +218,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "delete_mail_rule": "mail",
     "list_processed_mail": "mail",
     "get_processed_mail": "mail",
+    "explain_mail_import": "mail",
     "delete_processed_mail": "mail",
     "paperless_api_get": "raw",
     "list_workflows": "workflows",
@@ -613,6 +615,13 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
     ),
     "list_processed_mail": ToolAnnotations(
         title="List processed mail",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Compares stored settings and reads what Paperless stored; contacts no mail server.
+    "explain_mail_import": ToolAnnotations(
+        title="Explain mail import",
         read_only_hint=True,
         idempotent_hint=True,
         open_world_hint=False,
@@ -1196,6 +1205,7 @@ class Services:
     sharing: SharingService
     mail: MailService
     processed_mail: ProcessedMailService
+    mail_explanations: MailExplanations
     accounts: AccountAdmin
     system: SystemAdmin
     raw: RawApiService

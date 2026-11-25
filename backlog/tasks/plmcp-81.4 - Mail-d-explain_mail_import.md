@@ -1,10 +1,11 @@
 ---
 id: PLMCP-81.4
 title: 'Mail d: explain_mail_import'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T22:44:57Z'
-updated_date: '2026-11-25T08:20:37Z'
+updated_date: '2026-11-25T09:37:08Z'
 labels:
   - mail
 dependencies:
@@ -35,6 +36,12 @@ Fourth part of PLMCP-81: why a mail was not imported must be gathered by hand fr
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. services/log_records.py of PLMCP-87.4, verbatim. 2. domain (MailExplanation), services/mail_explanation.py: settings against what the caller knows, processed mail, tasks, logs (staff: mail log for the rule's lines, paperless log for skipped fetches, else not known), bounds. 3. Tool explain_mail_import, read-only. 4. Service, property, tool tests first; E2E with the mail server. 5. decision, docs, guide 2988 to 3010.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

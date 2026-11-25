@@ -120,7 +120,7 @@ def _page[T](items: Sequence[T], page: int, page_size: int) -> tuple[Sequence[T]
     return items[start : start + page_size], page + 1 if more else None
 
 
-def _line(text: str | None) -> str | None:
+def one_line(text: str | None) -> str | None:
     """``text`` as one line cut to ``MAX_ERROR`` characters; None stays None."""
     if text is None:
         return None
@@ -865,7 +865,7 @@ class MailService:
             received=mail.received,
             processed=mail.processed,
             status=mail.status,
-            error=_line(mail.error),
+            error=one_line(mail.error),
         )
 
     async def list_processed(
