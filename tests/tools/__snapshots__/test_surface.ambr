@@ -26931,7 +26931,8 @@
       'description': '''
         Show the file path a storage path or a new template would give a document; nothing changes.
         
-        path is null when the template cannot be rendered for the document or is unsafe (note says so).
+        path is null when the template cannot be rendered for the document or is unsafe (note says so);
+        a path of more than 64 KiB is refused.
         Needs the right to view the document, for storage_path also to view storage paths. Refused for a
         document whose correspondent, type, storage path, tags, custom fields or owner you may not see:
         Paperless would render their names.
@@ -53378,7 +53379,8 @@
       'description': '''
         Show the file path a storage path or a new template would give a document; nothing changes.
         
-        path is null when the template cannot be rendered for the document or is unsafe (note says so).
+        path is null when the template cannot be rendered for the document or is unsafe (note says so);
+        a path of more than 64 KiB is refused.
         Needs the right to view the document, for storage_path also to view storage paths. Refused for a
         document whose correspondent, type, storage path, tags, custom fields or owner you may not see:
         Paperless would render their names.

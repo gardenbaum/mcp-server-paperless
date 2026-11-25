@@ -1,6 +1,7 @@
 """Lookups: words of the search index, and the path a storage path would give a file."""
 
 from dataclasses import replace
+from typing import override
 
 import pytest
 from fakes.accounts import ADMIN, BLIND, READER
@@ -17,8 +18,12 @@ from fakes.paperless import (
 
 from mcp_server_paperless.domain.errors import (
     Ambiguous,
+    AnswerTooLarge,
     NotFound,
+    PaperlessMcpError,
     PermissionDenied,
+    UpstreamTimeout,
+    UpstreamUnavailable,
     Validation,
 )
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
@@ -266,3 +271,47 @@ async def test_an_owner_is_hidden_where_the_user_is_not_known() -> None:
 
     with pytest.raises(PermissionDenied, match="owner"):
         _ = await lookups(state, READER[0]).test_storage_path(10, None, "x")
+
+
+@pytest.mark.decision("decision-100")
+@pytest.mark.parametrize("template", [".", "./", " ./. "])
+async def test_a_path_that_is_only_a_dot_is_told_in_a_note(template: str) -> None:
+    found = await lookups().test_storage_path(PUBLIC, None, template)
+
+    assert found.path is None
+    assert "Paperless failed" in (found.note or "")
+    assert "only a dot" in (found.note or "")
+
+
+class Rendering(FakePaperless):
+    """A fake whose rendering fails."""
+
+    error: PaperlessMcpError = PaperlessMcpError("x")
+
+    @override
+    async def render_storage_path(self, document_id: int, template: str) -> str | None:
+        raise self.error
+
+
+def failing(error: PaperlessMcpError) -> Lookups:
+    fake = Rendering(seeded(), user=ADMIN[0])
+    fake.error = error
+    return Lookups(fake, fake, TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0))
+
+
+@pytest.mark.decision("decision-100")
+@pytest.mark.parametrize(
+    "error", [UpstreamUnavailable("down", status=503), UpstreamTimeout("slow")], ids=type
+)
+async def test_a_paperless_that_is_down_stays_an_error(error: PaperlessMcpError) -> None:
+    with pytest.raises(type(error)):
+        _ = await failing(error).test_storage_path(PUBLIC, None, "x")
+
+
+@pytest.mark.decision("decision-100")
+async def test_a_path_too_long_to_read_says_so() -> None:
+    with pytest.raises(AnswerTooLarge, match="too long to read") as raised:
+        _ = await failing(AnswerTooLarge("x")).test_storage_path(PUBLIC, None, "x")
+
+    assert "64 KiB" in raised.value.message
+    assert raised.value.hint
