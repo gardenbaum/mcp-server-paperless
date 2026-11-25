@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:53Z'
-updated_date: '2026-11-25T07:31:55Z'
+updated_date: '2026-11-25T08:14:39Z'
 labels:
   - mail
 dependencies: []
@@ -54,4 +54,6 @@ Login answers (decision-80) are hidden to the end of a text, and the undated hea
 Owner's words (2026-11-24): 'Alle wie empfohlen' in the question 'Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?'. Coverage rows and decisions 79 and 80 quote exactly that now.
 
 Review round 1 (independent), tests first: M1 an answer that starts with a carriage return was shown in get_log and raw logs (confirmed leak, fixed); M2 'Error while retrieving mailbox NAME:' hidden as well, with what useful text is lost, and the residuals, in decision-80; M3 tests for the surviving mutants; L1 is_token is bound in confirmations; L2 other records are always looked for, caveats named; L3 a failing list does not fail get_processed_mail; L4 (real order) with the mail server in 81.2.
+
+Codex round: a forged marker on the line of the answer took the place of the real one and left the password before it visible (P1, fixed: the first marker of a line counts; property test with forged markers of every kind). Other records are looked for whatever the scope of the rule (in f103ada).
 <!-- SECTION:NOTES:END -->

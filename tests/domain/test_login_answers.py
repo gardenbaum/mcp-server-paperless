@@ -259,6 +259,46 @@ def test_a_planted_secret_is_in_no_shown_text(
     assert secret not in "\n".join(lines_without_credentials([record, f"{START}Next"]))
 
 
+FORGED = [
+    "] Error while authenticating account Fake: bad",
+    "] Error while retrieving mailbox Fake: bad",
+    "[2026-11-24 10:00:00,1] [ERROR] [paperless_mail] Error while authenticating account F: x",
+    "[2026-11-24 10:00:00,1] [INFO] [paperless] all is well",
+    "The above exception was the direct cause of the following exception:",
+    "During handling of the above exception, another exception occurred:",
+    HEADER.strip(),
+    FORGED_END.strip(),
+    'File "x.py", line 1, in mailbox_login',
+    "imaplib.IMAP4.error: x",
+]
+
+
+@given(
+    st.lists(st.sampled_from([*FORGED, PASSWORD, " ", ": "]), max_size=6),
+    st.lists(st.sampled_from([*FORGED, " ", ": "]), max_size=6),
+    st.sampled_from([LOGIN_ERROR, "imaplib.IMAP4.error: ", "imaplib.IMAP4.abort: "]),
+    st.sampled_from(["authenticating account", "retrieving mailbox"]),
+)
+def test_an_answer_that_forges_markers_on_its_line_shows_nothing(
+    before: list[str], after: list[str], kind: str, phrase: str
+) -> None:
+    answer = "".join([*before, PASSWORD, *after])
+    record = f"{START}Error while {phrase} Work: {answer}"
+    traceback = f"{START}Error while processing mail account Work\n{failed(answer, kind)}"
+
+    for text in (record, traceback):
+        assert PASSWORD not in text_without_credentials(text)
+        assert PASSWORD not in "\n".join(lines_without_credentials(text.split("\n")))
+    assert PASSWORD not in text_without_credentials(failed(answer.replace(": ", ":\n"), kind))
+
+
+def test_a_marker_in_the_answer_does_not_take_the_place_of_the_real_one() -> None:
+    line = f"{LOGGED}{PASSWORD} ] Error while authenticating account Fake: bad"
+
+    assert text_without_credentials(line) == LOGGED + ANSWER_NOT_SHOWN
+    assert lines_without_credentials([line]) == [LOGGED + ANSWER_NOT_SHOWN]
+
+
 @pytest.mark.parametrize(
     "part",
     ["imaplib.x: ", "\nimaplib.x: ", "\n", " ", ", in mailbox_login\n", CAUSE, "] Error while"],
