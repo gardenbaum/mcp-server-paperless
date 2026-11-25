@@ -57,10 +57,13 @@ class Steps(Scope):
         _, made = consume(self.stack.admin, title, pdf_pages(texts))
         assert made is not None
         self.documents.append(made)
-        _ = self.stack.admin.patch(
-            f"/api/documents/{made}/", json={"owner": None}
-        ).raise_for_status()
+        self.free(made)
         return made
+
+    def free(self, document: int) -> None:
+        """Let everybody see and edit the document."""
+        path = f"/api/documents/{document}/"
+        _ = self.stack.admin.patch(path, json={"owner": None}).raise_for_status()
 
     def take(self, document: int) -> None:
         """The admin makes the document their own; every user of the test may look at it."""
@@ -143,10 +146,7 @@ class Acting(ChildRenderer):
         return made if self.instead is None else made.model_copy(update={"content": self.instead})
 
 
-async def test_an_insertion_whose_document_is_taken_meanwhile_writes_nothing(
-    steps: Steps,
-) -> None:
-    target, source = steps.pdf(1), steps.pdf(1)
+async def document_taken(steps: Steps, target: int, source: int) -> None:
     token = steps.user(*FOLLOWING)
 
     result = await steps.through(
@@ -163,11 +163,7 @@ async def test_an_insertion_whose_document_is_taken_meanwhile_writes_nothing(
     assert (steps.versions(target), steps.versions(source)) == (1, 1)
 
 
-async def test_an_insertion_paperless_cannot_consume_leaves_what_the_document_shows(
-    steps: Steps,
-) -> None:
-    target, source = steps.pdf(1), steps.pdf(1)
-
+async def not_consumed(steps: Steps, target: int, source: int) -> None:
     result = output(
         await steps.through(
             "insert_pages",
@@ -185,9 +181,7 @@ async def test_an_insertion_paperless_cannot_consume_leaves_what_the_document_sh
     assert (steps.versions(target), steps.versions(source)) == (1, 1)
 
 
-async def test_an_insertion_nobody_can_follow_says_where_to_look(steps: Steps) -> None:
-    target, source = steps.pdf(1), steps.pdf(1)
-
+async def insertion_nobody_can_follow(steps: Steps, target: int, source: int) -> None:
     result = output(
         await steps.through(
             "insert_pages",
@@ -207,6 +201,18 @@ async def test_an_insertion_nobody_can_follow_says_where_to_look(steps: Steps) -
     assert version is not None
     steps.documents.append(version)
     assert steps.versions(target) == 2
+
+
+async def test_every_way_an_insertion_ends_early_leaves_both_documents_until_one_succeeds(
+    steps: Steps,
+) -> None:
+    """One pair of documents for all of them: each has to leave it as it was for the next."""
+    target, source = steps.pdf(1), steps.pdf(1)
+
+    await document_taken(steps, target, source)
+    steps.free(target)
+    await not_consumed(steps, target, source)
+    await insertion_nobody_can_follow(steps, target, source)
 
 
 async def test_a_split_whose_metadata_is_refused_keeps_the_original(steps: Steps) -> None:
@@ -247,11 +253,7 @@ async def test_a_split_whose_metadata_is_refused_keeps_the_original(steps: Steps
     )
 
 
-async def test_an_extraction_whose_removal_is_refused_names_the_new_document(
-    steps: Steps,
-) -> None:
-    source = steps.pdf(2)
-
+async def removal_refused(steps: Steps, source: int) -> None:
     async def taken(document: int, _: object) -> None:
         steps.take(document)
 
@@ -279,8 +281,7 @@ async def test_an_extraction_whose_removal_is_refused_names_the_new_document(
     assert (kept["page_count"], steps.versions(source)) == (2, 1)
 
 
-async def test_an_extraction_nobody_can_follow_keeps_the_pages(steps: Steps) -> None:
-    source = steps.pdf(2)
+async def extraction_nobody_can_follow(steps: Steps, source: int) -> None:
     title = str(steps.record(source)["title"])
 
     result = output(
@@ -301,3 +302,10 @@ async def test_an_extraction_nobody_can_follow_keeps_the_pages(steps: Steps) -> 
     assert (result["state"], result["original"], result["produced_ids"]) == ("unknown", "kept", [])
     assert steps.record(await steps.appeared(title, besides=source))["page_count"] == 1
     assert (steps.record(source)["page_count"], steps.versions(source)) == (2, 1)
+
+
+async def test_every_way_an_extraction_ends_early_leaves_the_pages(steps: Steps) -> None:
+    source = steps.pdf(2)
+
+    await extraction_nobody_can_follow(steps, source)
+    await removal_refused(steps, source)
