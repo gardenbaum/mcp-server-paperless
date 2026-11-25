@@ -1,17 +1,29 @@
 """Counts over a selection, word suggestions and trying a storage path on the 3.5.1 wire format."""
 
+import gzip
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 import httpx2
 import pytest
 
+from adapter.conftest import streaming
 from adapter.test_taxonomy import STORAGE_PATH
-from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.errors import (
+    AnswerCompressed,
+    AnswerTooLarge,
+    NotFound,
+    PaperlessMcpError,
+    PermissionDenied,
+    UpstreamUnavailable,
+    Validation,
+)
 from mcp_server_paperless.paperless.documents import PaperlessDocumentReader
-from mcp_server_paperless.paperless.taxonomy import PaperlessTaxonomyReader
+from mcp_server_paperless.paperless.taxonomy import PATH_BYTES, PaperlessTaxonomyReader
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from adapter.conftest import ClientFactory
 
 pytestmark = pytest.mark.anyio
@@ -123,3 +135,82 @@ async def test_null_comes_as_an_empty_answer(make_client: ClientFactory) -> None
     client = make_client(lambda _: httpx2.Response(200, content=b""))
 
     assert await PaperlessTaxonomyReader(client).render_storage_path(7, "{{ nope }}") is None
+
+
+class Endless(httpx2.AsyncByteStream):
+    """A body that goes on for ever; it counts what was taken of it."""
+
+    def __init__(self) -> None:
+        self.taken: int = 0
+        self.closed: bool = False
+
+    @override
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        yield b'"'
+        while True:
+            self.taken += 1000
+            yield b"a" * 1000
+
+    @override
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.decision("decision-100")
+async def test_a_path_without_end_is_not_read_to_its_end() -> None:
+    body = Endless()
+    sent: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        sent.append(request)
+        return httpx2.Response(200, stream=body, headers={"Content-Type": "application/json"})
+
+    client, _ = streaming(handler)
+    with pytest.raises(AnswerTooLarge) as raised:
+        _ = await PaperlessTaxonomyReader(client).render_storage_path(7, "{{ 'a' * 500000000 }}")
+
+    assert body.taken <= PATH_BYTES + 1000
+    assert body.closed
+    assert f"more than {PATH_BYTES} bytes" in raised.value.message
+    assert len(sent) == 1
+    # A compressed body could unpack to any size before it is measured.
+    assert sent[0].headers["Accept-Encoding"] == "identity"
+
+
+@pytest.mark.decision("decision-100")
+async def test_a_path_up_to_the_limit_is_read_and_one_byte_more_is_not() -> None:
+    sizes: list[int] = [PATH_BYTES, PATH_BYTES + 1]
+    client, _ = streaming(
+        lambda _: httpx2.Response(200, content=b'"' + b"a" * (sizes.pop(0) - 2) + b'"')
+    )
+    reader = PaperlessTaxonomyReader(client)
+
+    assert len(await reader.render_storage_path(7, "x") or "") == PATH_BYTES - 2
+    with pytest.raises(AnswerTooLarge):
+        _ = await reader.render_storage_path(7, "x")
+
+
+async def test_a_compressed_or_odd_answer_is_not_taken() -> None:
+    answers = [
+        httpx2.Response(200, content=gzip.compress(b'"a"'), headers={"Content-Encoding": "gzip"}),
+        httpx2.Response(200, json={"path": "a"}),
+    ]
+    client, _ = streaming(lambda _: answers.pop(0))
+    reader = PaperlessTaxonomyReader(client)
+
+    with pytest.raises(AnswerCompressed):
+        _ = await reader.render_storage_path(7, "x")
+    with pytest.raises(PaperlessMcpError, match="unexpected response"):
+        _ = await reader.render_storage_path(7, "x")
+
+
+@pytest.mark.parametrize(
+    ("status", "error"), [(400, Validation), (403, PermissionDenied), (500, UpstreamUnavailable)]
+)
+async def test_a_refused_template_is_the_error_of_its_status(
+    make_client: ClientFactory, status: int, error: type[PaperlessMcpError]
+) -> None:
+    reader = PaperlessTaxonomyReader(make_client(Server({"detail": "x"}, status)))
+
+    with pytest.raises(error):
+        _ = await reader.render_storage_path(7, "x")

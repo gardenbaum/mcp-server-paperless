@@ -28,6 +28,7 @@ from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.read_documents import (
     COUNT_CHARS,
     DEFAULT_FIELDS,
+    NO_ROWS,
     TEXT_SECONDS,
     ReadDocuments,
 )
@@ -947,3 +948,25 @@ async def test_counts_leave_room_for_rows_and_the_answer_stays_within_its_limit(
     assert size(found) <= MAX_ANSWER
     assert found.truncated
     assert counts_of(found).tags.items
+
+
+@pytest.mark.decision("decision-100")
+async def test_no_row_is_read_when_the_counts_took_the_whole_time() -> None:
+    setup = Setup()
+    setup.fake.list_seconds = TEXT_SECONDS / 4
+
+    found = await setup.read(("title", "content"), counts=True, document_ids=(PUBLIC, PRIVATE))
+
+    assert (found.documents, found.left, found.missing) == ((), (PUBLIC, PRIVATE), ())
+    assert (setup.fake.rows, setup.fake.texts, found.truncated) == ([], [], True)
+    assert NO_ROWS in found.notices
+
+
+@pytest.mark.decision("decision-100")
+async def test_counts_in_time_leave_the_rows_alone() -> None:
+    setup = Setup()
+    setup.fake.list_seconds = TEXT_SECONDS / 10
+
+    found = await setup.read((), counts=True, document_ids=(PUBLIC,))
+
+    assert (ids(found), found.truncated, found.left) == ([PUBLIC], False, ())

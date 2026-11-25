@@ -109,3 +109,10 @@ async def test_hidden_names_are_not_shown_by_a_template() -> None:
     assert result.is_error
     assert "may not see (tag)" in str(result.content)
     assert "secret" not in str(result.content)
+
+
+@pytest.mark.decision("decision-100")
+async def test_a_dot_is_a_note_and_no_error() -> None:
+    output = await call("test_storage_path", document_id=1, template="./")
+
+    assert (output["path"], "only a dot" in str(output["note"])) == (None, True)

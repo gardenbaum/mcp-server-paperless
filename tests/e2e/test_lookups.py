@@ -196,3 +196,16 @@ async def test_a_hidden_name_is_not_rendered(
     assert refused.is_error
     assert "may not see (tag)" in str(refused.content)
     assert word not in str(refused.content)
+
+
+async def test_a_dot_and_a_path_without_end_are_no_outage(
+    stack: Stack, transport: Transport, scratch: tuple[str, list[int], int]
+) -> None:
+    asked = {"document_id": scratch[1][0]}
+    async with connected(stack, transport) as client:
+        dot = await output(client, "test_storage_path", **asked, template="./")
+        endless = await call(client, "test_storage_path", **asked, template="{{ 'a' * 1000000 }}")
+
+    assert (dot["path"], "only a dot" in str(dot["note"])) == (None, True)
+    assert endless.is_error
+    assert "too long to read" in str(endless.content)
