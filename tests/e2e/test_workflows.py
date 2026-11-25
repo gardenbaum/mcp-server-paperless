@@ -330,3 +330,143 @@ async def test_a_user_who_may_only_view_workflows_reads_their_parts_too(
     assert [w["name"] for w in cast("list[Json]", held["workflows"])] == [name]
     assert alone["workflows"] is None
     assert "may not perform this action" in str(denied)
+
+
+def secret_workflow(stack: Stack, name: str, *, enabled: bool = False) -> Json:
+    """A workflow with a webhook that holds secrets and an action this server cannot write."""
+    hook = {"url": "https://user:planted@h.invalid/x", "headers": {"X-Token": "planted"}}
+    actions: list[Json] = [
+        {"type": 1, "assign_title": "one"},
+        {"type": 4, "webhook": {**hook, "use_params": False, "body": "b"}},
+        {"type": 5, "passwords": ["planted"]},
+        {"type": 8, "ai_suggestion_fields": ["title"]},
+    ]
+    triggers = [{"type": 1, "filter_filename": NEVER["filename"]}, {"type": 5}]
+    body = {"name": name, "enabled": enabled, "triggers": triggers, "actions": actions}
+    _ = stack.admin.post("/api/workflows/", json=body).raise_for_status()
+    [raw] = stored(stack, name)
+    return raw
+
+
+@pytest.mark.decision("decision-82")
+async def test_single_parts_are_written_and_hidden_values_never_leave_paperless(
+    client: Connected, stack: Stack
+) -> None:
+    name = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
+    made = secret_workflow(stack, name)
+    title, hook, locked, suggests = cast("list[Json]", made["actions"])
+    outputs: list[Json | str] = []
+
+    async def part(**arguments: object) -> list[Json]:
+        outputs.append(await call(client, "update_workflow_part", workflow=name, **arguments))
+        [raw] = stored(stack, name)
+        return cast("list[Json]", raw["actions"])
+
+    added = await part(
+        operation="add",
+        action={"type": "assignment", "assign_tags": ["e2e-finance"]},
+        position=1,
+    )
+    assert added[1:] == [title, hook, locked, suggests]
+    fresh = added[0]
+    moved = await part(operation="change", action_id=locked["id"], position=1)
+    assert moved == [locked, fresh, title, hook, suggests]
+    webhook = {"url": "https://h.invalid/x", "headers": {"X-Token": "(hidden)"}, "body": "c"}
+    changed = await part(
+        operation="change",
+        action_id=hook["id"],
+        action={"type": "webhook", "webhook": {**webhook, "use_params": False}},
+    )
+    assert changed[:3] + changed[4:] == [locked, fresh, title, suggests]
+    kept = cast("Json", changed[3]["webhook"])
+    assert (kept["url"], kept["headers"], kept["body"]) == (
+        "https://user:planted@h.invalid/x",
+        {"X-Token": "planted"},
+        "c",
+    )
+    cleared = await part(operation="change", action_id=title["id"], clear=["assign_title"])
+    assert cleared[2]["assign_title"] is None
+    _ = await part(
+        operation="add",
+        trigger={
+            "type": "added",
+            "has_tags": ["e2e-finance"],
+            "match": "n",
+            "matching_algorithm": 1,
+        },
+    )
+    [raw] = stored(stack, name)
+    first, by_hand, new = cast("list[Json]", raw["triggers"])
+    assert [first, by_hand] == made["triggers"]
+    assert (new["type"], new["match"]) == (2, "n")
+    gone = await part(operation="remove", trigger_id=by_hand["id"])
+    assert gone == cleared
+
+    arguments: Json = {"workflow": name, "operation": "remove", "action_id": hook["id"]}
+    text = await refused(client, "update_workflow_part", **arguments)
+    outputs.append(text)
+    assert "lose for good what is stored hidden" in text
+    assert "the value of 'X-Token', the credentials of its URL" in text
+    [raw] = stored(stack, name)
+    assert raw["actions"] == cleared
+    left = await part(operation="remove", action_id=hook["id"], confirm=True)
+    assert left == [locked, fresh, cleared[2], suggests]
+    assert "planted" not in str(outputs)
+
+
+@pytest.mark.decision("decision-82")
+async def test_parts_of_an_enabled_workflow_are_confirmed_and_foreign_ones_refused(
+    client: Connected, stack: Stack
+) -> None:
+    name, other = (f"{SCRATCH}{uuid.uuid4().hex[:8]}" for _ in range(2))
+    made = secret_workflow(stack, name, enabled=True)
+    theirs = secret_workflow(stack, other)
+    [foreign, *_] = cast("list[Json]", theirs["actions"])
+    tool = "update_workflow_part"
+    title = {"type": "assignment", "assign_title": "x"}
+
+    text = await refused(client, tool, workflow=name, operation="add", action=title)
+    taken = await refused(
+        client, tool, workflow=name, operation="remove", action_id=foreign["id"], confirm=True
+    )
+    unsafe = await refused(
+        client,
+        tool,
+        workflow=other,
+        operation="change",
+        trigger_id=cast("list[Json]", theirs["triggers"])[0]["id"],
+        clear=["filename"],
+    )
+
+    assert f"add an assignment action to the workflow '{name}'" in text
+    assert "send a POST request to 'h.invalid', with credentials (not shown)" in text
+    assert "holds no action" in taken
+    assert "needs a path, filename or mailrule filter" in unsafe
+    assert [stored(stack, n)[0] for n in (name, other)] == [made, theirs]
+    _ = await call(client, tool, workflow=name, operation="add", action=title, confirm=True)
+    assert len(cast("list[Json]", stored(stack, name)[0]["actions"])) == 5
+
+
+@pytest.mark.decision("decision-82")
+async def test_a_user_who_may_change_workflows_writes_parts_and_a_viewer_does_not(
+    stack: Stack, client: Connected, user: Callable[..., Signed]
+) -> None:
+    name = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
+    made = secret_workflow(stack, name)
+    title, *rest = cast("list[Json]", made["actions"])
+    assert (await call(client, "get_workflow", workflow=name))["name"] == name
+    results_of: list[bool] = []
+    for rights in (("view_workflow",), ("view_workflow", "change_workflow")):
+        token = user(*rights, "view_uisettings").token
+        settings = server_settings(toolsets=["core", "workflows"])
+        server = create_server(paperless_settings(stack.base_url, token), settings)
+        arguments: Json = {"workflow": name, "operation": "remove", "action_id": title["id"]}
+        async with Client(server) as restricted:
+            result = await restricted.call_tool(
+                "update_workflow_part", arguments, raise_on_error=False
+            )
+        results_of.append(result.is_error)
+
+    assert results_of == [True, False]
+    [raw] = stored(stack, name)
+    assert (raw["actions"], raw["triggers"]) == (rest, made["triggers"])

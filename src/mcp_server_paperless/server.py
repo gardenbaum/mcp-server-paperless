@@ -88,6 +88,7 @@ from mcp_server_paperless.services.uploads import UploadService
 from mcp_server_paperless.services.version_uploads import VersionUploadService
 from mcp_server_paperless.services.versions import VersionService
 from mcp_server_paperless.services.views import ViewService
+from mcp_server_paperless.services.workflow_parts import WorkflowParts
 from mcp_server_paperless.services.workflow_runs import WorkflowRuns
 from mcp_server_paperless.services.workflows import WorkflowService
 from mcp_server_paperless.tools import (
@@ -557,11 +558,18 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.mail, adapters.mail_writes, adapters.documents
                 ),
                 raw=RawApiService(adapters.raw),
-                workflows=WorkflowService(adapters.workflows, adapters.workflow_writes, taxonomy),
+                workflows=(
+                    flows := WorkflowService(adapters.workflows, adapters.workflow_writes, taxonomy)
+                ),
+                workflow_parts=WorkflowParts(
+                    adapters.workflows,
+                    adapters.workflow_writes,
+                    flows,
+                ),
                 workflow_runs=WorkflowRuns(
                     adapters.documents,
                     adapters.workflow_writes,
-                    WorkflowService(adapters.workflows, adapters.workflow_writes, taxonomy),
+                    flows,
                     DocumentSelector(adapters.documents, documents, views, taxonomy),
                     taxonomy,
                 ),

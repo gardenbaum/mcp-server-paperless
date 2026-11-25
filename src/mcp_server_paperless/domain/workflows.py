@@ -72,6 +72,7 @@ type UsedKind = Literal[
     "group",
     "mail_rule",
 ]
+type PartKind = Literal["triggers", "actions"]
 type FieldShape = Literal["one", "list", "text", "flag", "number", "json"]
 
 
@@ -175,6 +176,21 @@ class WorkflowAction(BaseModel):
 
     id: int | None = None
     type: int
+    settings: Mapping[str, JsonValue] = {}
+
+
+class PartWrite(BaseModel):
+    """A trigger or action of a workflow that is written by its parts.
+
+    With an id and nothing else it stays as it is, with settings only these change. A trigger is
+    always sent in full, so that Paperless cannot make an unfiltered one of an id that is gone.
+    Without an id it is a new one.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int | None = None
+    type: int | None = None
     settings: Mapping[str, JsonValue] = {}
 
 
@@ -728,3 +744,20 @@ class WorkflowRunReport(BaseModel):
         ),
     ] = ()
     message: str
+
+
+type PartOperation = Literal["add", "change", "remove"]
+
+
+class PartEdit(BaseModel):
+    """What to do with one trigger or action of a workflow."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    operation: PartOperation
+    trigger_id: int | None = None
+    action_id: int | None = None
+    trigger: TriggerInput | None = None
+    action: ActionInput | None = None
+    clear: tuple[str, ...] = ()
+    position: int | None = None
