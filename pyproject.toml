@@ -166,6 +166,7 @@ markers = [
     "e2e: runs against the real Paperless stack of tests/e2e/compose.yaml (`just e2e`)",
     "ai_e2e: needs a Paperless with AI enabled and an LLM backend (`just e2e-ai`); skips otherwise",
     "office_e2e: needs a Paperless with Tika and Gotenberg (`just e2e-office`); skips otherwise",
+    "imap_e2e: needs a Paperless with a mail server (`just e2e-imap`); skips otherwise",
     "duplicates_e2e: needs a Paperless that rejects duplicates (`just e2e-duplicates`); skips otherwise",
     "postgres_e2e: needs a Paperless on PostgreSQL (`just e2e-postgres`); skips otherwise",
     "decision(id): the test guards the Backlog decision with this id, e.g. \"decision-1\"",

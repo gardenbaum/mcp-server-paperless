@@ -6,7 +6,8 @@ tests (which script the wire) and the contract tests already cover. So the conne
 against a host that refuses connections, which is the failure Paperless answers with an HTTP 500;
 a login that works and a server that never answers are covered by the fake and the adapter tests.
 A fetch is queued for such an account and fails in the background without touching anything. Rows
-of processed mail are written only by a real fetch, so that listing is checked empty.
+of processed mail are written only by a real fetch, so that listing is checked empty; real imports
+run on a stack of their own (test_mail_import.py, `just e2e-imap`, PLMCP-81.2).
 
 Every account and rule a test makes is deleted afterwards (rules first), also when it failed; the
 stack is shared, and rows of other runs are not touched.
