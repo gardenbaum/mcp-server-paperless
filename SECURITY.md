@@ -58,8 +58,8 @@ a tag, or somebody who has the Paperless token.
 
 ## Saved downloads
 
-Nothing is saved unless you set `PAPERLESS_MCP_DOWNLOAD_DIRS`, and never over HTTP, in read-only mode
-or on Windows. A model that reads documents others wrote can be talked into calls, so the server
+Nothing is saved unless you set `PAPERLESS_MCP_DOWNLOAD_DIRS`, and never over HTTP, in read-only mode,
+by a toolset selected read-only (`name:read`) or on Windows. A model that reads documents others wrote can be talked into calls, so the server
 itself holds the limits: one new plain file in an existing directory inside those you named, with
 the ending of the type Paperless detected (from a fixed table), never hidden, never executable, and an existing file is
 replaced only after a confirmation: a dialog where your client can show one, else `confirm=true`,

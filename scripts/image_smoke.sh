@@ -25,7 +25,7 @@ docker run -d --name "$name" --read-only --cap-drop ALL --security-opt no-new-pr
     -p 127.0.0.1::8000 \
     -e PAPERLESS_URL=http://paperless.invalid:8000 -e PAPERLESS_TOKEN=smoke-paperless-token \
     -e PAPERLESS_MCP_HTTP_AUTH_TOKENS="$secret" -e PAPERLESS_MCP_HTTP_ALLOWED_HOSTS=mcp.example.org \
-    "$image" > /dev/null
+    -e PAPERLESS_MCP_TOOLSETS=core:read "$image" > /dev/null
 [[ "$(docker exec "$name" id -u)" != 0 ]] || { echo "the container runs as root" >&2; exit 1; }
 for _ in $(seq 1 60); do
     status="$(docker inspect --format '{{.State.Health.Status}}' "$name")"
@@ -45,12 +45,14 @@ code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$endpoint" -H 'Host: evi
     -H 'Accept: application/json, text/event-stream' -d '{}')"
 [[ "$code" == 421 ]] || { echo "expected 421, got $code" >&2; exit 1; }
 
-echo "5/6 answers an MCP initialize with a token"
-code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$endpoint" \
+echo "5/6 answers an MCP initialize with a token, of a toolset that is only read (decision-97)"
+answer="$(curl -s -w '\n%{http_code}' -X POST "$endpoint" \
     -H "Authorization: Bearer $secret" -H 'Content-Type: application/json' \
     -H 'Accept: application/json, text/event-stream' \
     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}')"
+code="${answer##*$'\n'}"
 [[ "$code" == 200 ]] || { echo "expected 200, got $code" >&2; exit 1; }
+grep -qF 'core (read-only)' <<< "$answer" || { echo "core:read is not read-only: $answer" >&2; exit 1; }
 echo "6/6 renders a page in its child process"
 "$(dirname "$0")/image_render_smoke.sh" "$image"
 echo "image smoke test passed"

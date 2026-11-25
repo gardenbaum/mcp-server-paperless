@@ -48,7 +48,7 @@ async def run_every_combination(overviews: dict[str, InstanceOverview], *, ai: b
     for user, overview in overviews.items():
         capability = "unknown" if user == "no-settings" else "present" if ai else "missing"
         assert (overview.ai_enabled is None) is (user == "no-settings"), user
-        ceilings: dict[tuple[str, bool], Seen | None] = {}
+        ceilings: dict[tuple[object, ...], Seen | None] = {}
         for combination in COMBINATIONS:
             await check(
                 lambda overview=overview: Recorded(overview),
