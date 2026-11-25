@@ -6,6 +6,7 @@ log say more where the user may read them; the log is told in this server's word
 lines hold names and texts of other documents.
 """
 
+import asyncio
 import json
 import re
 import time
@@ -17,6 +18,7 @@ from typing import TYPE_CHECKING, Final, cast
 from mcp_server_paperless.domain.documents import DocumentQuery
 from mcp_server_paperless.domain.errors import (
     PaperlessMcpError,
+    UpstreamTimeout,
     Validation,
     quoted,
 )
@@ -65,6 +67,7 @@ MAX_HISTORY, MAX_NAMES, MAX_FINDINGS, MAX_TASKS = 50, 10, 20, 100
 YEAR: Final = timedelta(days=365)  # a date in a custom field counts that long
 NEAR: Final = timedelta(minutes=2)
 LOG: Final = "paperless"
+TIME_UP: Final = "the time was up"
 QUERY: Final = "a custom field query"
 # Characters of an error that is repeated.
 MAX_REASON: Final = 300
@@ -543,10 +546,16 @@ class WorkflowExplanations:
             NotFound: No such workflow, or no such document the user may see.
             Ambiguous: The name matches several workflows.
             PermissionDenied: The user may not view workflows or documents.
+            UpstreamTimeout: Both could not be read in time.
         """
         until = self._clock() + SECONDS
-        found = await self._workflows.find(workflow)
-        document = await self._documents.get_document(document_id)
+        try:
+            async with asyncio.timeout(until - self._clock()):  # the list is read page by page
+                found = await self._workflows.find(workflow)
+                document = await self._documents.get_document(document_id)
+        except TimeoutError:
+            message = f"Paperless did not answer within {SECONDS:.0f} seconds."
+            raise UpstreamTimeout(message, hint="Try again later.") from None
         facts = _Facts(document=document, names={}, now=self._now())
         await self._read(found, facts, until)
         triggers = [_explained(trigger, facts) for trigger in found.triggers]
@@ -589,11 +598,15 @@ class WorkflowExplanations:
         """What may be missing: each source is asked once, and said where it cannot be read."""
         failed: list[tuple[str, str]] = []
         for label, read in self._sources(workflow, facts):
-            if self._clock() >= until:
-                failed.append((label, "the time was up"))
+            left = until - self._clock()
+            if left <= 0:
+                failed.append((label, TIME_UP))
                 continue
             try:
-                await read()
+                async with asyncio.timeout(left):  # names are read page by page
+                    await read()
+            except TimeoutError:
+                failed.append((label, TIME_UP))
             except PaperlessMcpError as error:
                 failed.append((label, error.message[:MAX_REASON]))
         queries = [why for label, why in failed if label == QUERY]
@@ -622,6 +635,15 @@ class WorkflowExplanations:
 
         async def log() -> None:
             facts.records = await read_log_records(self._management, LOG)
+            added = facts.document.added
+            if not facts.records:
+                facts.missing.append("the log holds no records")
+                return
+            first = facts.records[0]
+            if _utc(first, added.utcoffset() or timedelta()) > added:
+                begin = first.time.isoformat(sep=" ")
+                said = f"the log before {begin}: it is not read, and the document arrived before"
+                facts.missing.append(said)
 
         kinds: set[TaxonomyKind] = {
             setting.kind

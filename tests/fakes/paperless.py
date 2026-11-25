@@ -20,6 +20,7 @@ write its contract tests.
 """
 
 import contextlib
+import copy
 import functools
 import re
 import sys
@@ -197,6 +198,8 @@ from mcp_server_paperless.paperless.tasks import not_found
 from mcp_server_paperless.paperless.taxonomy import TAG_DELETE_HINT
 from mcp_server_paperless.paperless.trash import beyond_last_page as beyond_trash
 from mcp_server_paperless.paperless.trash import refused as trash_refused
+from mcp_server_paperless.paperless.ui_settings import READING, WRITING
+from mcp_server_paperless.paperless.ui_settings import refused as ui_settings_refused
 from mcp_server_paperless.paperless.views import unseen_view
 
 if TYPE_CHECKING:
@@ -225,6 +228,7 @@ if TYPE_CHECKING:
         MailAccountTestResult,
         MailAccountValues,
         MailRule,
+        MailRulePage,
         MailRuleValues,
         ProcessedMail,
         ProcessedMailPage,
@@ -614,6 +618,10 @@ class FakeState:
     # PAPERLESS_CONSUMER_DELETE_DUPLICATES: a file any document or version has fails its task.
     delete_duplicates: bool = False
     saved_views: list[FakeSavedView] = field(default_factory=list[FakeSavedView])
+    # What the web UI stored, per user id (without what Paperless computes for each answer).
+    ui_settings: dict[int, dict[str, JsonValue]] = field(
+        default_factory=dict[int, dict[str, JsonValue]]
+    )
     groups: list[FakeGroup] = field(default_factory=list[FakeGroup])
     share_links: list[FakeShareLink] = field(default_factory=list[FakeShareLink])
     share_bundles: list[FakeShareBundle] = field(default_factory=list[FakeShareBundle])
@@ -3098,6 +3106,7 @@ class FakePaperless:
             {
                 "mail_account": state.mail_accounts,
                 "mail_rule": state.mail_rules,
+                "saved_view": state.saved_views,
                 "document": state.documents,
                 "tag": state.tags,
                 "correspondent": state.correspondents,
@@ -3207,7 +3216,7 @@ class FakePaperless:
         Order: the global change permission (403), the object among those the user may see (404),
         the values (400: unknown users, groups or owner, and a name another object of the new
         owner already has, as the serializer validates them), then ownership (403: a change
-        grant is not enough). An unowned rule of the same name is
+        grant is not enough). An unowned rule and a view of the same name are
         found last, after the grants were set.
         """
         target = self._permission_target(kind, object_id)
@@ -3219,14 +3228,15 @@ class FakePaperless:
             if change.owner not in {None, *(u.id for u in state.users)}:
                 reject("owner", f'Invalid pk "{change.owner}" - object does not exist.')
             clashes = self._owner_clashes(kind, target, change.owner)
-            if clashes and not (kind == "mail_rule" and change.owner is None):
+            late = kind == "saved_view" or (kind == "mail_rule" and change.owner is None)
+            if clashes and not late:
                 reject("non_field_errors", "The fields name, owner must make a unique set.")
         if not (self.user.is_superuser or target.owner in {None, self.user.id}):
             message = "The Paperless user may not perform this action."
             raise PermissionDenied(message)
         if given is not None:
             set_grants(target, given)
-        if clashes:  # Unowned rules are compared after the grants were set.
+        if clashes:  # Unowned rules and all views are compared after the grants were set.
             reject("error", "Object violates owner / name unique constraint")
         if "owner" in change.model_fields_set:
             target.owner = change.owner
@@ -3298,7 +3308,7 @@ class FakePaperless:
         """
         self._view_allowed("change")
         view = self._visible_view(view_id)
-        if not self.user.may_change_object(view):
+        if not view.changeable_by(self.user):
             message = "The Paperless user may not perform this action."
             raise PermissionDenied(message)
         sent = values.model_fields_set
@@ -3361,9 +3371,32 @@ class FakePaperless:
             display_mode=view.display_mode,
             display_fields=view.display_fields,
             owner=view.owner,
-            user_can_change=self.user.may_change_object(view),
+            user_can_change=view.changeable_by(self.user),
             filter_rules=view.filter_rules,
         )
+
+    # --- UiSettingsReader and UiSettingsWriter
+
+    async def get_ui_settings(self) -> dict[str, JsonValue]:
+        """`UiSettingsReader.get_ui_settings` (UiSettingsView GET).
+
+        Raises:
+            PermissionDenied: The user lacks `view_uisettings`.
+        """
+        if not self.user.has(READING):
+            raise ui_settings_refused(READING)
+        return copy.deepcopy(self.state.ui_settings.get(self.user.id, {}))
+
+    @write
+    async def replace_ui_settings(self, settings: Mapping[str, JsonValue]) -> None:
+        """`UiSettingsWriter.replace_ui_settings` (UiSettingsView POST): the whole object.
+
+        Raises:
+            PermissionDenied: The user lacks `add_uisettings`.
+        """
+        if not self.user.has(WRITING):
+            raise ui_settings_refused(WRITING)
+        self.state.ui_settings[self.user.id] = copy.deepcopy(dict(settings))
 
     # --- SharingReader and SharingWriter (the logic is in fakes/sharing.py)
 
@@ -3500,6 +3533,10 @@ class FakePaperless:
     async def list_mail_rules(self) -> tuple[MailRule, ...]:
         """`MailReader.list_mail_rules`."""
         return mail.list_rules(self._mail(), self._mail_viewer())
+
+    async def list_mail_rule_page(self, *, page: int, page_size: int) -> MailRulePage:
+        """`MailReader.list_mail_rule_page`."""
+        return mail.rule_page(self._mail(), self._mail_viewer(), page, page_size)
 
     async def get_mail_rule(self, rule_id: int) -> MailRule:
         """`MailReader.get_mail_rule`."""

@@ -1,4 +1,4 @@
-"""Owners and grants of documents, taxonomy and mail objects, and their users and groups.
+"""Owners and grants of documents, taxonomy and mail objects and saved views, and their users.
 
 ``set_permissions`` reads the current owner and grants of every selected object, works out the
 complete new grants and sends only the objects that change. Two modes (the lists a caller leaves
@@ -37,13 +37,12 @@ from mcp_server_paperless.domain.errors import (
 from mcp_server_paperless.domain.permissions import (
     MAX_OBJECTS,
     AccessChange,
-    AccessView,
     GroupList,
     ObjectResult,
     PermissionsResult,
-    Principal,
     UserList,
 )
+from mcp_server_paperless.services.access import access_view, groups_of, owner_ids, users_of
 from mcp_server_paperless.services.document_runner import OUT_OF_TIME, RUN_SECONDS
 from mcp_server_paperless.services.documents import document_link
 from mcp_server_paperless.services.principals import is_numeric, names_of, resolve_principals
@@ -73,7 +72,10 @@ COUNTED: Final[tuple[SharedKind, ...]] = (
     "storage_path",
 )
 # The kinds that are chosen by name or id and cached.
-SHARED: Final[dict[PermissionKind, SharedKind]] = {kind: kind for kind in COUNTED}
+SHARED: Final[dict[PermissionKind, SharedKind]] = {
+    **{kind: kind for kind in COUNTED},
+    "saved_view": "saved_view",
+}
 LABELS: Final[dict[PermissionKind, str]] = {
     "document": "document",
     "tag": "tag",
@@ -82,12 +84,14 @@ LABELS: Final[dict[PermissionKind, str]] = {
     "storage_path": "storage path",
     "mail_account": "mail account",
     "mail_rule": "mail rule",
+    "saved_view": "saved view",
 }
-# Where the ids of objects that are chosen by id only are found.
+# Where the ids of objects are found that list_taxonomy does not hold, or not with their rules.
 FINDERS: Final[dict[PermissionKind, str]] = {
     "document": "search_documents",
     "mail_account": "list_mail_accounts",
     "mail_rule": "list_mail_rules",
+    "saved_view": "list_saved_views",
 }
 # What a grant to change, or another owner, gives beyond the object itself.
 NOTES: Final[dict[PermissionKind, str]] = {
@@ -101,6 +105,10 @@ NOTES: Final[dict[PermissionKind, str]] = {
         "its account, without any right on the account. The owner of a rule owns the mails it "
         "imports whole from then on, and attachments where assign_owner_from_rule is on; without "
         "an owner every user with the global permission to view documents sees them"
+    ),
+    "saved_view": (
+        "Whoever may change a saved view decides which documents run_saved_view and bulk calls "
+        "that name it see"
     ),
 }
 # The kinds whose objects are read one by one, so that a call is bounded in time.
@@ -405,13 +413,13 @@ class PermissionService:
         users: set[int] = set()
         groups: set[int] = set()
         for plan in plans:
-            users |= _users_of(plan.current.permissions) | _owner_ids(plan.current)
-            groups |= _groups_of(plan.current.permissions)
+            users |= users_of(plan.current.permissions) | owner_ids(plan.current)
+            groups |= groups_of(plan.current.permissions)
             if plan.owner_changes and plan.owner is not None:
                 users.add(plan.owner)
         for grants in new:
-            users |= _users_of(grants)
-            groups |= _groups_of(grants)
+            users |= users_of(grants)
+            groups |= groups_of(grants)
         return {
             "user": await names_of(self._taxonomy, "user", sorted(users)),
             "group": await names_of(self._taxonomy, "group", sorted(groups)),
@@ -481,7 +489,7 @@ class PermissionService:
                 if kind == "document"
                 else None,
                 changed=plan.current.id in written,
-                access=_view(written.get(plan.current.id, plan.current), names),
+                access=access_view(written.get(plan.current.id, plan.current), names),
             )
             for plan in plans
         )
@@ -584,18 +592,6 @@ def _rebuilt(error: PaperlessMcpError, message: str) -> PaperlessMcpError:
     return type(error)(message, hint=error.hint)
 
 
-def _users_of(grants: ObjectPermissions) -> set[int]:
-    return {*grants.view_users, *grants.change_users}
-
-
-def _groups_of(grants: ObjectPermissions) -> set[int]:
-    return {*grants.view_groups, *grants.change_groups}
-
-
-def _owner_ids(access: ObjectAccess) -> set[int]:
-    return set() if access.owner is None else {access.owner}
-
-
 def _unseen(kind: PermissionKind, missing: list[int]) -> NotFound:
     label = LABELS[kind]
     noun = "id" if len(missing) == 1 else "ids"
@@ -626,28 +622,6 @@ def _change(plan: _Plan) -> AccessChange:
     if plan.grants_change:
         fields["permissions"] = plan.grants
     return AccessChange.model_validate(fields)
-
-
-def _principal(number: int, names: dict[int, str]) -> Principal:
-    return Principal(id=number, name=names[number])
-
-
-def _view(access: ObjectAccess, names: dict[PrincipalKind, dict[int, str]]) -> AccessView:
-    """The access in names; view lists hold those who may only view."""
-    grants = access.permissions
-    users, groups = names["user"], names["group"]
-    return AccessView(
-        owner=None if access.owner is None else _principal(access.owner, users),
-        view_users=tuple(
-            _principal(n, users) for n in sorted(set(grants.view_users) - set(grants.change_users))
-        ),
-        view_groups=tuple(
-            _principal(n, groups)
-            for n in sorted(set(grants.view_groups) - set(grants.change_groups))
-        ),
-        change_users=tuple(_principal(n, users) for n in sorted(grants.change_users)),
-        change_groups=tuple(_principal(n, groups) for n in sorted(grants.change_groups)),
-    )
 
 
 # The buckets of a change of access, as (level before, level after) pairs.

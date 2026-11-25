@@ -18,7 +18,7 @@ from harness import paperless_settings, server_settings
 from e2e.echo_server import HOST as ECHO
 from e2e.echo_server import echo_server
 from e2e.helpers import API_VERSION, in_container, num, obj, parse, results
-from e2e.mailbox import BROKEN, PASSWORD, Mailbox, note
+from e2e.mailbox import BROKEN, PASSWORD, Mailbox, note, wait
 from mcp_server_paperless.domain.urls import ANSWER_NOT_SHOWN
 from mcp_server_paperless.server import create_server
 
@@ -280,7 +280,8 @@ async def test_the_rule_acts_when_the_mail_is_imported_although_its_file_fails(
 
     assert box.fetch() == 2
     [row, *_] = box.records(rule, count=None)
-    assert FLAGGED in box.flags(uid)
+    # The first record can be that of the file that fails; the mail itself is imported after it.
+    _ = wait("the rule to act", lambda: FLAGGED in box.flags(uid) or None)
     said = str((await record(client, row))["refetch"])
     assert "as soon as the mail itself, or every one of the files, is consumed" in said
     assert len(box.documents("Half")) == 1

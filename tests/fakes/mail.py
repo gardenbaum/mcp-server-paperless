@@ -30,6 +30,7 @@ from mcp_server_paperless.domain.mail import (
     MailAccount,
     MailAccountTestResult,
     MailRule,
+    MailRulePage,
     ProcessedMail,
     ProcessedMailPage,
     check_password,
@@ -37,6 +38,7 @@ from mcp_server_paperless.domain.mail import (
 )
 from mcp_server_paperless.paperless.mail import (
     beyond_last_page,
+    beyond_last_rule_page,
     connected,
     failed_login,
     silent_server,
@@ -287,6 +289,19 @@ def list_rules(data: MailData, user: Viewer) -> tuple[MailRule, ...]:
     _allow(user, "view", "mailrule")
     rows = [r for r in data.rules if r.visible_to(user)]
     return tuple(_rule(r, user) for r in sorted(rows, key=lambda r: (r.order, r.id)))
+
+
+def rule_page(data: MailData, user: Viewer, page: int, page_size: int) -> MailRulePage:
+    """`MailReader.list_mail_rule_page` (MailRuleViewSet list, ordered by `order`)."""
+    rows = list_rules(data, user)
+    start = (page - 1) * page_size
+    if page > 1 and start >= len(rows):
+        raise beyond_last_rule_page(page)
+    return MailRulePage(
+        count=len(rows),
+        next_page=page + 1 if start + page_size < len(rows) else None,
+        rules=rows[start : start + page_size],
+    )
 
 
 def get_rule(data: MailData, user: Viewer, rule_id: int) -> MailRule:

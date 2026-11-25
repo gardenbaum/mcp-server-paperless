@@ -258,10 +258,18 @@ newest or of a named version. The file stays as it is.
 
 ### `views`
 
-Off by default: `list_saved_views`, `get_saved_view`, `create_saved_view`, `update_saved_view`
-and `delete_saved_view`, to read and maintain saved views: name, filter rules, sort order, page
-size, and how the web UI shows them (icon, display mode, display fields; the last two can be put
-back to its default). Running a view is `run_saved_view` in `core`.
+Off by default: `list_saved_views`, `get_saved_view`, `create_saved_view`, `update_saved_view`,
+`pin_saved_view` and `delete_saved_view`, to read and maintain saved views: name, filter rules,
+sort order, page size, and how the web UI shows them (icon, display mode, display fields; the last
+two can be put back to its default). `get_saved_view` also shows the owner and who may view or
+change the view (`set_permissions` in `permissions` changes them). Running a view is
+`run_saved_view` in `core`.
+
+`pin_saved_view` shows a view on the dashboard or in the sidebar of the web UI, or takes it away,
+for the Paperless user the server signs in as only (it needs the permissions to view and to add UI
+settings). Paperless writes these settings only as a whole: the server sends back what it read and
+compares afterwards. An open Paperless tab has to be reloaded; with its next save it can undo the
+change.
 
 ### `trash`
 
@@ -324,7 +332,8 @@ documents in its refusal. E-mail needs a mail server set up in Paperless
 ### `permissions`
 
 Off by default: `set_permissions`, `list_users`, `list_groups`. Shares documents, tags,
-correspondents, document types, storage paths, mail accounts and mail rules (the last two by id),
+correspondents, document types, storage paths, saved views, mail accounts and mail rules (the last
+two by id),
 and hands them over: `set_permissions` sets the owner and the users and groups who may view or
 change, by name or id. Its default mode `merge` only adds to the grants and mode `replace` makes
 each list you give exactly that list. Granting access cannot be taken back, so every call that

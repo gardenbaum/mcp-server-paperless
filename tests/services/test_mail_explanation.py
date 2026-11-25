@@ -36,7 +36,11 @@ from mcp_server_paperless.services.mail_explanation import (
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.errors import PaperlessMcpError
-    from mcp_server_paperless.domain.mail import MailExplanation, MailRule, ProcessedMailPage
+    from mcp_server_paperless.domain.mail import (
+        MailExplanation,
+        MailRulePage,
+        ProcessedMailPage,
+    )
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-90")]
 
@@ -725,15 +729,16 @@ async def test_no_answer_to_a_login_and_no_credentials_are_shown() -> None:
 
 @final
 class Slow(FakePaperless):
-    """Every list of rules takes the whole time of a call."""
+    """Every page of rules takes a time, by default the whole one of a call."""
 
     owner: Setup | None = None
+    takes: float = 40
 
     @override
-    async def list_mail_rules(self) -> tuple[MailRule, ...]:
+    async def list_mail_rule_page(self, *, page: int, page_size: int) -> MailRulePage:
         assert self.owner is not None
-        self.owner.now += 40
-        return await super().list_mail_rules()
+        self.owner.now += self.takes
+        return await super().list_mail_rule_page(page=page, page_size=page_size)
 
 
 async def test_after_forty_seconds_nothing_is_asked_and_all_of_it_is_named() -> None:
@@ -771,7 +776,7 @@ async def test_a_failed_read_is_named_and_a_rate_limit_ends_the_call(
     @final
     class Failing(FakePaperless):
         @override
-        async def list_mail_rules(self) -> tuple[MailRule, ...]:
+        async def list_mail_rule_page(self, **_: object) -> MailRulePage:
             raise error
 
     setup = Setup(make=Failing)
@@ -779,7 +784,10 @@ async def test_a_failed_read_is_named_and_a_rate_limit_ends_the_call(
         with pytest.raises(type(error)):
             _ = await setup.explain()
         return
-    assert "the rules: silent" in (await setup.explain()).not_checked
+    found = await setup.explain()
+    assert "the rules: silent" in found.not_checked
+    assert "The rules could not be read" in found.message
+    assert "Not all rules" not in found.message
 
 
 async def test_a_long_answer_leaves_rules_out_and_counts_them() -> None:
@@ -897,10 +905,13 @@ async def test_only_failed_files_of_mails_count_and_what_is_left_out_is_said() -
 
 async def test_more_failed_tasks_than_are_read_are_said() -> None:
     setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [LOG.format(0, "x")]
+    setup.state.logs["paperless"] = [RUN.format(0, "x")]
     for number in range(26):
         setup.state.tasks.append(FakeTask(id=number, task_id=f"t{number}", status="failure"))
 
-    found = await setup.explain()
+    found = await setup.explain(subject="x")
 
     assert "files that could not be consumed: only the newest 25 of 26 were looked at" in (
         found.not_checked
@@ -1165,3 +1176,128 @@ async def test_exactly_eighteen_gaps_are_all_shown(*, rules: int, counted: bool)
 
     assert any("more things" in gap for gap in found.not_checked) is counted
     assert len(found.not_checked) == (18 + 1 + counted)  # and the note about others
+
+
+@pytest.mark.parametrize(("fetches", "more"), [(5, False), (6, True)])
+async def test_more_fetches_than_are_read_are_said(*, fetches: int, more: bool) -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [LOG.format(0, "x")]
+    setup.state.logs["paperless"] = [RUN.format(0, "x")]
+    for number in range(fetches):
+        setup.state.tasks.append(
+            FakeTask(id=number + 1, task_id=f"t{number}", task_type="mail_fetch", status="success")
+        )
+
+    found = await setup.explain(subject="x")
+
+    gap = "fetches: only the newest 5 of 6 were looked at"
+    assert len(found.tasks) == 5
+    assert (gap in found.not_checked) is more
+    assert found.complete  # reading the newest is the purpose
+
+
+def slow(takes: float) -> Setup:
+    """An instance that needs ``takes`` seconds for each page of rules, with 250 of them."""
+    setup = Setup(make=Slow)
+    assert isinstance(setup.fake, Slow)
+    setup.fake.owner, setup.fake.takes = setup, takes
+    for number in range(250):
+        setup.rule(order=number, enabled=False)
+    return setup
+
+
+async def test_no_page_of_rules_is_asked_for_after_forty_seconds() -> None:
+    setup = slow(20)
+
+    found = await setup.explain(subject="x")
+
+    assert setup.now == 40
+    assert "the rules after the first 200: 40 seconds have passed" in found.not_checked
+    assert found.message.count("Not all rules could be read.") == 1
+    assert not found.complete
+
+
+async def test_all_pages_of_rules_are_read_in_time() -> None:
+    setup = slow(13)
+
+    found = await setup.explain(rule_id=250)
+
+    assert setup.now == 39
+    assert [rule.rule_id for rule in found.rules] == [250]
+    assert not any("the rules" in gap for gap in found.not_checked)
+    assert "Not all rules" not in found.message
+
+
+async def test_a_rule_among_the_unread_ones_is_not_said_to_be_missing() -> None:
+    found = await slow(20).explain(rule_id=250)
+
+    assert found.rules == ()
+    assert "Not all rules could be read." in found.message
+    assert "You see no rule" not in found.message
+    assert not found.complete
+
+
+async def test_an_account_whose_rules_are_unread_is_not_said_to_have_none() -> None:
+    setup = slow(20)
+    for rule in setup.state.mail_rules:
+        rule.account = 2 if rule.id <= 200 else 1
+
+    found = await setup.explain()
+
+    assert "Not all rules could be read." in found.message
+    assert "You see no rule" not in found.message
+
+
+@pytest.mark.parametrize("failure", [UpstreamTimeout("silent"), NotFound("gone", hint="h")])
+async def test_rules_read_before_a_failed_page_are_kept(failure: PaperlessMcpError) -> None:
+    @final
+    class Second(FakePaperless):
+        @override
+        async def list_mail_rule_page(self, *, page: int, page_size: int) -> MailRulePage:
+            if page == 2:
+                raise failure
+            return await super().list_mail_rule_page(page=page, page_size=page_size)
+
+    setup = Setup(make=Second)
+    for _ in range(101):
+        setup.rule(enabled=False)
+
+    found = await setup.explain(rule_id=100)
+
+    assert [rule.rule_id for rule in found.rules] == [100]
+    assert f"the rules after the first 100: {failure.message}" in found.not_checked
+
+
+async def test_at_most_two_thousand_rules_are_read() -> None:
+    setup = Setup()
+    for _ in range(2001):
+        setup.rule(enabled=False)
+
+    found = await setup.explain(rule_id=2000)
+
+    assert [rule.rule_id for rule in found.rules] == [2000]
+    assert "the rules: only 2000 of 2001 were read" in found.not_checked
+    assert "Not all rules could be read." in found.message
+    assert not found.complete
+
+
+async def test_rules_that_moved_between_pages_are_not_passed_over_in_silence() -> None:
+    @final
+    class Moving(FakePaperless):
+        @override
+        async def list_mail_rule_page(self, *, page: int, page_size: int) -> MailRulePage:
+            found = await super().list_mail_rule_page(page=page, page_size=page_size)
+            if page == 1:
+                return found
+            again = await super().list_mail_rule_page(page=1, page_size=page_size)
+            return found.model_copy(update={"rules": again.rules[:1]})
+
+    setup = Setup(make=Moving)
+    for _ in range(101):
+        setup.rule(enabled=False)
+
+    found = await setup.explain(rule_id=1)
+
+    assert len(found.rules) == 1
+    assert "the rules: only 100 of 101 were read" in found.not_checked

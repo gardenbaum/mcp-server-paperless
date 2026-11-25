@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, cast, final, override
 
+import anyio
 import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakePaperless, FakeTask, seeded
@@ -49,6 +50,7 @@ if TYPE_CHECKING:
         DocumentRecord,
         DocumentText,
     )
+    from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
     from mcp_server_paperless.domain.workflows import WorkflowExplanation
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-88")]
@@ -78,6 +80,25 @@ def line(
 class Failing(FakePaperless):
     broken: bool = False
     nameless: bool = False
+    pages: int = 0
+    slow: float = 0.0
+
+    @override
+    async def list_taxonomy(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
+        for _ in range(20 if self.slow > 0 else 0):  # as the adapter reads page after page
+            self.pages += 1
+            await anyio.sleep(self.slow)
+        return await super().list_taxonomy(kind)
+
+    @override
+    async def list_workflows(
+        self, *, enabled: bool | None = None, trigger_type: int | None = None
+    ) -> tuple[Workflow, ...]:
+        for _ in range(20 if self.slow < 0 else 0):
+            self.pages += 1
+            await anyio.sleep(-self.slow)
+        return await super().list_workflows(enabled=enabled, trigger_type=trigger_type)
+
     search_error: Exception | None = None
 
     @override
@@ -326,7 +347,7 @@ async def test_a_custom_field_query_is_asked_of_paperless() -> None:
     ):
         [check] = await setup.checks(trigger(filter_custom_field_query=query))
         assert (check.filter, check.result) == ("custom_field_query", result)
-    setup.times = [0.0, 99.0, 99.0, 99.0, 99.0]
+    setup.times = [0.0, 0.0, 99.0, 99.0, 99.0, 99.0]
     [late] = await setup.checks(trigger(filter_custom_field_query="[]"))
     assert late.result == "unknown"
 
@@ -494,7 +515,7 @@ async def test_what_may_not_be_read_is_named_and_the_rest_is_told() -> None:
 async def test_no_source_is_asked_after_the_time_is_up() -> None:
     setup = Setup()
     setup.flow(trigger())
-    setup.times = [0.0, 1.0, 40.0, 41.0]
+    setup.times = [0.0, 0.0, 1.0, 40.0, 41.0]
 
     answer = await setup.explain()
 
@@ -1174,9 +1195,9 @@ async def test_names_are_quoted_and_cut() -> None:
 async def test_the_lists_of_names_are_read_within_the_time_and_named() -> None:
     setup = Setup()
     setup.document.tags = [1]
-    setup.times = [0.0, 40.0]
+    setup.times = [0.0, 0.0, 40.0]
     late = await setup.checks(trigger(filter_has_tags=[1]))
-    setup.times = [0.0, 40.0]
+    setup.times = [0.0, 0.0, 40.0]
     answer = await setup.explain()
     denied = Setup(READER[0], grant=("view_workflow",))
     user = denied.fake.user
@@ -1484,3 +1505,57 @@ async def test_the_answer_names_what_a_rename_hides() -> None:
     setup.flow(trigger())
 
     assert "under a former name" in (await setup.explain()).note
+
+
+async def test_no_page_of_names_is_asked_for_after_the_time_is_up() -> None:
+    setup = Setup()
+    setup.document.tags = [1]
+    setup.flow(trigger(filter_has_tags=[1]))
+    setup.fake.slow = 0.05
+    setup.times = [0.0, 39.9, 39.9]
+
+    answer = await setup.explain()
+    asked = setup.fake.pages
+    await anyio.sleep(0.2)
+
+    assert asked < 20
+    assert setup.fake.pages == asked
+    assert "the names of tags: the time was up" in answer.not_checked
+    assert "#1" in answer.triggers[0].checks[0].why
+
+
+async def test_a_workflow_list_that_takes_too_long_is_an_error_not_an_endless_call() -> None:
+    setup = Setup()
+    setup.flow(trigger())
+    setup.fake.slow = -0.05
+    setup.times = [0.0, 39.9]
+
+    with pytest.raises(UpstreamTimeout, match="40 seconds"):
+        _ = await setup.explain()
+
+    assert setup.fake.pages < 20
+
+
+@pytest.mark.parametrize(
+    ("at", "late"), [("19:47:20", False), ("19:47:30", False), ("19:47:31", True)]
+)
+async def test_a_log_that_begins_after_the_document_arrived_is_named(
+    at: str, *, late: bool
+) -> None:
+    setup = Setup()
+    setup.consumed()
+    setup.flow(trigger())
+    setup.state.logs["paperless"] = [line("anything", at=at)]
+
+    missing = (await setup.explain()).not_checked
+
+    said = f"the log before 2026-11-11 {at}: it is not read, and the document arrived before"
+    assert (said in missing) is late
+
+
+async def test_an_empty_log_is_named() -> None:
+    setup = Setup()
+    setup.consumed()
+    setup.flow(trigger())
+
+    assert (await setup.explain()).not_checked == ("the log holds no records",)

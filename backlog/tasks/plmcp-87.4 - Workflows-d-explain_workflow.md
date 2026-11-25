@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:07Z'
-updated_date: '2026-11-25T11:21:33Z'
+updated_date: '2026-11-25T13:56:22Z'
 labels:
   - workflows
 dependencies:
@@ -58,4 +58,6 @@ Owner, 2026-11-25, question dialog: 'Ja, alles (Recommended)' (yes, everything (
 Commit 'fix: what the review of explain_workflow found' held a leftover mutant ('if False: raise' in the query check; a mutation run in the worktree was stopped by its time limit). It was put back in d7b07b2 before this note, where the existing test fails with it; every changed condition of the diff was compared by eye, no other leftover. Mutants run only in a copy from now on.
 
 Second review of #161 (d3b3378): N1 to N4 done, tests first (4 red; the others of N2 pin behaviour that was there). Corrections of earlier notes: E2E 45588369857 ran on 87f27da, before the logger rules and the first review round, so it says nothing of them (45596824462 on d7b07b2 does); mutants: 39 of the first version (4 survived, closed), 39 after the first review (4 survived, 3 closed, 1 equivalent), 27 now in a copy outside the worktree (none survived). Taking 81d's test_log_records.py dropped two tests of mine (redaction with a cut first record, reading the end of a log); 81d restores the redaction one.
+
+Owner, 2026-11-25: 'Alles wie empfohlen' (everything as recommended), answering 'gröbere Gründe aus dem Log in Ordnung (the tags do not fit)?' (are coarser reasons from the log all right). Two holes Codex found in mail_explanation were real here too, fixed with a failing test first: a log that is empty or begins after the document arrived is named; the pages of names and workflows end 40 seconds after the call began. Full E2E 45603789273 on cba61ab green; 45611182400 on fd5e78a red only in two tests of PLMCP-81.4 (test_mail_import rule action, contract test_mail log lines).
 <!-- SECTION:NOTES:END -->

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:57Z'
-updated_date: '2026-11-25T11:11:46Z'
+updated_date: '2026-11-25T13:49:30Z'
 labels:
   - mail
 dependencies:
@@ -24,8 +24,8 @@ Fourth part of PLMCP-81: why a mail was not imported must be gathered by hand fr
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 explain_mail_import explains from settings, processed mail, tasks and logs without a connection of this server, says it is not a dry run and names the closest way
-- [ ] #2 Each check says ok, no or unknown; bounds and what could not be read are named
+- [x] #1 explain_mail_import explains from settings, processed mail, tasks and logs without a connection of this server, says it is not a dry run and names the closest way
+- [x] #2 Each check says ok, no or unknown; bounds and what could not be read are named
 - [ ] #3 Contract, tool and E2E tests cover each check, hidden rules, a user who is not staff, and that no credential appears
 <!-- AC:END -->
 
@@ -53,4 +53,10 @@ Implementation notes: the service was written before its tests, against the rule
 Review of #163 fixed, tests first: forged log dates, log forms anchored with their loggers (services/mail_log_lines.py), one start time per log (logs_from is a list), gaps for failed tasks beyond the bound, bounded gaps, check record for records that can block the mail, texts of 2000 characters for sender, recipient and subject, extreme dates, two days of doubt, colours, folder to move to, exact folder for queued mail. 84 hand mutants killed. Limits: hidden records and tasks, the uid of a mail, names with a full stop, new log wordings, same subject in another account.
 
 Second review, tests first: another mail's line with the same file name is left out, wording of skipped fetches and of records of others, contract test of the log lines of a fetch, boundaries of 5 files and 18 gaps, decision-90 names forged records and lines that may be about another mail.
+
+Codex P2 on #163: fetch tasks beyond the five that are read stand in not_checked and make complete false, test first.
+
+Owner, 2026-11-25: "Alles wie empfohlen" (everything as recommended): fetches before the newest five are named in not_checked and leave complete as it is; test first. This replaces the note before. Full E2E 45615787192 on 4254397 is green in all ten jobs.
+
+Codex P2 on #163, test first: the rules are read page by page (MailReader.list_mail_rule_page, new), so no page is asked for 40 seconds after the call began; unread rules stand in not_checked, make complete false, and are not said to be missing.
 <!-- SECTION:NOTES:END -->

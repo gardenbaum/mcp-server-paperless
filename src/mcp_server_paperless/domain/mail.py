@@ -245,6 +245,16 @@ class ProcessedMail(BaseModel):
     error: str | None
 
 
+class MailRulePage(BaseModel):
+    """One page of mail rules as the port reads it."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    count: int
+    next_page: int | None
+    rules: tuple[MailRule, ...]
+
+
 class ProcessedMailPage(BaseModel):
     """One page of processed mail as the port reads it."""
 
@@ -585,5 +595,5 @@ class MailExplanation(BaseModel):
     ]
     not_checked: Annotated[
         tuple[str, ...],
-        Field(description="That, and what cannot be known at all."),
+        Field(description="That, older fetches, and what cannot be known at all."),
     ]
