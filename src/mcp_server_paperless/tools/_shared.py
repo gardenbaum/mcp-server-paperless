@@ -78,6 +78,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.version_uploads import VersionUploadService
     from mcp_server_paperless.services.versions import VersionService
     from mcp_server_paperless.services.views import ViewService
+    from mcp_server_paperless.services.workflow_explanation import WorkflowExplanations
     from mcp_server_paperless.services.workflow_parts import WorkflowParts
     from mcp_server_paperless.services.workflow_runs import WorkflowRuns
     from mcp_server_paperless.services.workflows import WorkflowService
@@ -223,6 +224,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "get_workflow": "workflows",
     "create_workflow": "workflows",
     "update_workflow": "workflows",
+    "explain_workflow": "workflows",
     "update_workflow_part": "workflows",
     "delete_workflow": "workflows",
     "run_workflow": "workflows",
@@ -971,6 +973,12 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    "explain_workflow": ToolAnnotations(
+        title="Explain workflow",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     # A workflow runs unattended on every matching document and can send documents out (e-mail,
     # webhook): open world. Not destructive in itself (decision-21): trashing, removing and the
     # outward actions need confirm while the workflow is enabled, plain filing does not. Creating
@@ -1165,6 +1173,7 @@ class Services:
 
     workflows: WorkflowService
     workflow_parts: WorkflowParts
+    workflow_explanations: WorkflowExplanations
     workflow_runs: WorkflowRuns
 
     instance: InstanceService

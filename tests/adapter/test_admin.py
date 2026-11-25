@@ -1237,3 +1237,21 @@ async def test_a_refusal_of_whoever_reads_an_opened_archive_stays_as_it_is() -> 
             [1], content="archive", compression="none", follow_formatting=False, wait_seconds=1
         ):
             raise error
+
+
+@pytest.mark.decision("decision-88")
+async def test_tasks_are_limited_to_a_time(make_client: ClientFactory) -> None:
+    server = Recording(page())
+    created = datetime(2026, 11, 10, 8, tzinfo=UTC), datetime(2026, 11, 11, 9, 30, tzinfo=UTC)
+
+    _ = await PaperlessAdminReader(make_client(server)).list_tasks(
+        state=None, task_type=None, acknowledged=None, page=1, page_size=5, created=created
+    )
+
+    assert server.sent[0][3] == {
+        "page": "1",
+        "page_size": "5",
+        "ordering": "-date_created",
+        "date_created_after": "2026-11-10T08:00:00+00:00",
+        "date_created_before": "2026-11-11T09:30:00+00:00",
+    }

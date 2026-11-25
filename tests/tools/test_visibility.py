@@ -95,7 +95,7 @@ READ_MAIL = {
     "get_processed_mail",
 }
 WORKFLOWS = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "workflows"}
-READ_WORKFLOWS = {"list_workflows", "get_workflow"}
+READ_WORKFLOWS = {"list_workflows", "get_workflow", "explain_workflow"}
 
 
 async def names(server: FastMCP) -> set[str]:

@@ -366,7 +366,7 @@ would be fetched again without its record).
 ### `workflows`
 
 Off by default: `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow`,
-`update_workflow_part`, `delete_workflow`, `run_workflow`. Manages the workflows Paperless runs by itself, with triggers and actions as
+`update_workflow_part`, `delete_workflow`, `run_workflow`, `explain_workflow`. Manages the workflows Paperless runs by itself, with triggers and actions as
 nested objects and tags, correspondents, document types, storage paths, custom fields, users and
 groups given by name. An enabled workflow keeps acting on every matching document, so
 `create_workflow`, `update_workflow` and `update_workflow_part` need `confirm` when it moves documents to the trash,
@@ -392,6 +392,12 @@ does not belong to its trigger or action type is an error.
   so. Written back as returned, on an action with the id it has now, the URL keeps what is stored;
   with an empty user name (`https://@host/path`) it loses them. Without the id, it is refused.
   A copy of it in another workflow is written without them, and the result says so.
+
+- `explain_workflow` compares a workflow with a document, filter by filter, and says what the document's
+  history, its consume task and (for staff users) the log tell. Paperless keeps no readable record of
+  runs: the answer is an inference from the state of today and says so; `did_run` is `yes` only with
+  a log record of the document's own consume task, otherwise `unknown`. Log lines are told in the
+  server's words, without names and text of other documents.
 
 `run_workflow` runs an enabled workflow with a manual trigger on up to 100 documents, chosen like those
 of `bulk_edit_documents`; see `create_workflow` for manual triggers. Every run is confirmed:

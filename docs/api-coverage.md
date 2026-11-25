@@ -78,13 +78,13 @@ Limits.
 | `POST /api/documents/rotate/` | `rotate_documents` |  |
 | `POST /api/documents/selection_data/` |  | PLMCP-83 |
 | `DELETE /api/documents/{id}/` | `delete_document` |  |
-| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 22 more |  |
+| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 23 more |  |
 | `PATCH /api/documents/{id}/` | `correct_document_text`, `extract_pages`, `set_permissions`, `split_document`, `update_document` and 1 more |  |
 | `PUT /api/documents/{id}/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/ai_suggestions/` | `get_ai_suggestions` |  |
 | `GET /api/documents/{id}/download/` | `download_document`, `get_document_pages`, `get_trashed_file`, `insert_pages`, `inspect_pdf` |  |
 | `POST /api/documents/{id}/email/` |  | PLMCP-83 |
-| `GET /api/documents/{id}/history/` | `get_document` |  |
+| `GET /api/documents/{id}/history/` | `explain_workflow`, `get_document` |  |
 | `GET /api/documents/{id}/metadata/` | `delete_pages`, `download_document`, `edit_pdf`, `email_documents`, `extract_pages` and 11 more |  |
 | `DELETE /api/documents/{id}/notes/` | `delete_note` |  |
 | `GET /api/documents/{id}/notes/` | `add_notes`, `delete_note`, `get_document`, `read_documents` |  |
@@ -104,7 +104,7 @@ Limits.
 | `PATCH /api/groups/{id}/` | `update_group` |  |
 | `PUT /api/groups/{id}/` |  | PLMCP-83 |
 | `GET /api/logs/` | `list_logs` |  |
-| `GET /api/logs/{id}/` | `get_log` |  |
+| `GET /api/logs/{id}/` | `explain_workflow`, `get_log` |  |
 | `GET /api/mail_accounts/` | `list_mail_accounts` |  |
 | `POST /api/mail_accounts/` | `create_mail_account` |  |
 | `POST /api/mail_accounts/test/` | `test_mail_account` |  |
@@ -164,7 +164,7 @@ Limits.
 | `GET /api/tags/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/tags/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/tags/{id}/` |  | PLMCP-83 |
-| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `extract_pages`, `get_task` and 13 more |  |
+| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `explain_workflow`, `extract_pages` and 14 more |  |
 | `POST /api/tasks/acknowledge/` | `acknowledge_tasks` |  |
 | `GET /api/tasks/active/` |  | PLMCP-89 |
 | `POST /api/tasks/run/` | `run_task` |  |
@@ -195,7 +195,7 @@ Limits.
 | `GET /api/workflow_triggers/{id}/` | `get_workflow` |  |
 | `PATCH /api/workflow_triggers/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
 | `PUT /api/workflow_triggers/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
-| `GET /api/workflows/` | `create_workflow`, `delete_workflow`, `get_workflow`, `list_workflows`, `run_workflow` and 2 more |  |
+| `GET /api/workflows/` | `create_workflow`, `delete_workflow`, `explain_workflow`, `get_workflow`, `list_workflows` and 3 more |  |
 | `POST /api/workflows/` | `create_workflow` |  |
 | `DELETE /api/workflows/{id}/` | `delete_workflow` |  |
 | `GET /api/workflows/{id}/` | `get_workflow`, `update_workflow_part` |  |

@@ -1527,7 +1527,9 @@ class AdminReader(Protocol):
         page_size: int,
         created: tuple[datetime, datetime] | None = None,
     ) -> TaskRowPage:
-        """One page of tasks, newest first, optionally filtered, also to those created between two moments.
+        """One page of tasks, newest first, optionally filtered.
+
+        ``created`` is a pair of moments: only tasks created between them.
 
         Raises:
             NotFound: ``page`` is beyond the last page.

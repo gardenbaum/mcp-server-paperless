@@ -21,6 +21,7 @@ type Json = dict[str, object]
 TOOLS = {
     "list_workflows",
     "get_workflow",
+    "explain_workflow",
     "create_workflow",
     "update_workflow",
     "delete_workflow",
@@ -72,14 +73,14 @@ async def test_the_workflows_are_not_in_the_default_profile() -> None:
     assert names.isdisjoint(TOOLS)
 
 
-async def test_the_workflows_toolset_offers_seven_tools_and_read_only_mode_keeps_two() -> None:
+async def test_the_workflows_toolset_offers_eight_tools_and_read_only_mode_keeps_three() -> None:
     async with Client(serve(fake(), toolsets=["workflows"])) as client:
         names = {tool.name for tool in await client.list_tools()}
     async with Client(serve(fake(), toolsets=["workflows"], read_only=True)) as client:
         read_only = {tool.name for tool in await client.list_tools()}
 
     assert names == TOOLS
-    assert read_only == {"list_workflows", "get_workflow"}
+    assert read_only == {"list_workflows", "get_workflow", "explain_workflow"}
 
 
 async def test_the_workflows_are_listed_with_names_instead_of_ids() -> None:
@@ -291,6 +292,7 @@ async def test_the_annotations_mark_workflows_open_world_and_delete_destructive(
 
     assert hints("create_workflow") == (False, False, True)
     assert hints("update_workflow") == (False, True, True)
+    assert hints("explain_workflow") == (None, True, False)
     assert hints("update_workflow_part") == (True, False, True)
     assert hints("delete_workflow") == (True, True, False)
 
@@ -597,3 +599,26 @@ async def test_a_manual_trigger_and_ai_suggestions_are_created() -> None:
         "ai_overwrite_existing": True,
     }
     assert "'title', 'tags', 'correspondent'" in wrong
+
+
+@pytest.mark.decision("decision-88")
+async def test_a_workflow_is_explained_for_a_document() -> None:
+    state = with_workflow()
+    state.documents[0].tags = [4]
+
+    output = await call(
+        fake(state, writes=False), "explain_workflow", workflow="Filing", document_id=1
+    )
+    missing = await refusal(fake(state), "explain_workflow", workflow="Filing", document_id=999)
+    denied = await refusal(
+        fake(state, user="e2e-reader"), "explain_workflow", workflow=1, document_id=1
+    )
+
+    assert (output["would_match_now"], output["did_run"]) == ("no", "unknown")
+    assert "keeps no readable record" in str(output["note"])
+    [trigger] = cast("list[Json]", output["triggers"])
+    [check] = cast("list[Json]", trigger["checks"])
+    assert (check["filter"], check["result"]) == ("has_tags", "no")
+    assert "wanted is one of 'e2e-finance'" in str(check["why"])
+    assert "999" in missing
+    assert "may not perform this action" in denied

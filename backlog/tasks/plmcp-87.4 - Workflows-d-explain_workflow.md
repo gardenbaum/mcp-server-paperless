@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:07Z'
-updated_date: '2026-11-25T09:24:55Z'
+updated_date: '2026-11-25T09:44:54Z'
 labels:
   - workflows
 dependencies:
@@ -36,3 +36,16 @@ Fourth part of PLMCP-87: why a workflow did not run on a document can only be gu
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Probe P6 (done). 2. log_records helper, explanation service, port window, tool, coverage, decision-88, docs. 3. Full hosted E2E on the finished head.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner approval (2026-11-24): 'Alle wie empfohlen' (question in decision-81), here 7a, 8a. Probe P6: run 45585312563, job 139105284889 (results in decision-88). The production code of this part was written before its tests (not red first); the tests were then proven with 39 hand mutants (4 survived first, closed). Coverage 100 %.
+Shared helper for 81d: services/log_records.py.
+<!-- SECTION:NOTES:END -->

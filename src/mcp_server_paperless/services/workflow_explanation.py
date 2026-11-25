@@ -1,9 +1,9 @@
-"""Why a workflow ran on a document or did not: an inference from today's state (decision-87).
+"""Why a workflow ran on a document or did not: an inference from today's state (decision-88).
 
 Paperless keeps no record of runs that can be read, so the settings of the workflow are compared
-with the document as it is now, in the order of Paperless's own checks. History, consume task and log
-say more where the user may read them; the log is told in this server's words, because its lines hold
-names and texts of other documents.
+with the document as it is now, in the order of Paperless's own checks. History, consume task and
+log say more where the user may read them; the log is told in this server's words, because its
+lines hold names and texts of other documents.
 """
 
 import json
@@ -238,7 +238,8 @@ class _Checks:
             )
         )
         if found is None:
-            why = "the text could not be read" if text is None else f"{label} is not checked here"
+            checked = algorithm in {1, 2, 3}
+            why = "the text could not be read" if checked else f"{label} is not checked here"
             self._add("match", "unknown", why, "content")
             return
         verb = "matches" if found else "does not match"
@@ -524,10 +525,11 @@ class WorkflowExplanations:
 
     def _asking(self, query: str, facts: _Facts) -> Callable[[], Awaitable[None]]:
         async def ask() -> None:
-            wanted = DocumentQuery(ids=(facts.document.id,), custom_field_query=query)
             try:
+                expression = cast("JsonValue", json.loads(query))
+                wanted = DocumentQuery(ids=(facts.document.id,), custom_field_query=expression)
                 page = await self._documents.search_documents(wanted, page=1, page_size=1)
-            except Validation:
+            except Validation, ValueError, RecursionError:
                 facts.queries[query] = False  # Paperless takes a query it rejects as no match
                 return
             facts.queries[query] = page.count > 0

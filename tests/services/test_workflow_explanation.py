@@ -1,0 +1,730 @@
+"""WorkflowExplanations: why a workflow ran on a document or did not."""
+
+import json
+import re
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta, timezone
+from typing import TYPE_CHECKING, cast, final, override
+
+import pytest
+from fakes.accounts import ADMIN, READER
+from fakes.paperless import FakePaperless, FakeTask, seeded
+from fakes.workflows import TRIGGER_DEFAULTS
+from hypothesis import given
+from hypothesis import strategies as st
+
+from mcp_server_paperless.domain.documents import HistoryEntry
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, UpstreamTimeout
+from mcp_server_paperless.domain.workflows import (
+    FilterCheck,
+    LogFinding,
+    Workflow,
+    WorkflowAction,
+    WorkflowTrigger,
+)
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.workflow_explanation import (
+    MAX_CHARS,
+    NOTE,
+    WorkflowExplanations,
+    content_matches,
+)
+from mcp_server_paperless.services.workflows import WorkflowService
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from fakes.paperless import FakeDocument
+    from pydantic import JsonValue
+
+    from mcp_server_paperless.domain.documents import DocumentRecord, DocumentText
+    from mcp_server_paperless.domain.workflows import WorkflowExplanation
+
+pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-88")]
+
+NOW = datetime.now(UTC)
+TASK = "0badcafe-1111-4222-8333-444455556666"
+ADDED = datetime(2026, 11, 11, 19, 47, 30, tzinfo=UTC)
+MATCHING, HANDLERS = "paperless.matching", "paperless.handlers"
+TAG_ACTION = WorkflowAction(id=8, type=1, settings={"assign_tags": [4]})
+
+
+def trigger(
+    kind: int = 2, number: int = 7, settings: dict[str, JsonValue] | None = None, **more: JsonValue
+) -> WorkflowTrigger:
+    return WorkflowTrigger(
+        id=number, type=kind, settings={**TRIGGER_DEFAULTS, **(settings or {}), **more}
+    )
+
+
+def line(
+    message: str, *, at: str = "19:47:20", task: str | None = None, name: str = MATCHING
+) -> str:
+    prefix = f"[{task}] " if task else ""
+    return f"[2026-11-11 {at},123] [INFO] [{name}] {prefix}{message}"
+
+
+class Failing(FakePaperless):
+    broken: bool = False
+    nameless: bool = False
+
+    @override
+    async def get_document(self, document_id: int) -> DocumentRecord:
+        found = await super().get_document(document_id)
+        return found.model_copy(update={"original_file_name": None}) if self.nameless else found
+
+    @override
+    async def get_document_content(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> DocumentText:
+        if self.broken:
+            message = "Paperless did not answer in time."
+            raise UpstreamTimeout(message)
+        return await super().get_document_content(document_id, version_id=version_id)
+
+
+@final
+class Setup:
+    def __init__(self, user: str = ADMIN[0], *, grant: Sequence[str] = ()) -> None:
+        self.state = seeded()
+        self.state.users = [
+            replace(u, permissions=u.permissions | frozenset(grant)) if u.username == user else u
+            for u in self.state.users
+        ]
+        self.document: FakeDocument = next(d for d in self.state.documents if d.id == 1)
+        self.document.added = ADDED
+        self.document.history = []
+        self.state.logs["paperless"] = []
+        self.state.tasks = []
+        self.fake = Failing(self.state, user=user)  # without `allow_writes`
+        resolver = TaxonomyResolver(self.fake, StaticTokenProvider("t"), ttl=3600.0)
+        workflows = WorkflowService(self.fake, self.fake, resolver)
+        self.times: list[float] = []
+        self.service = WorkflowExplanations(
+            self.fake, self.fake, workflows, resolver, clock=self._clock
+        )
+
+    def _clock(self) -> float:
+        return self.times.pop(0) if self.times else 0.0
+
+    def put(self, values: dict[str, object]) -> None:
+        """Give the document these values."""
+        place = self.state.documents.index(self.document)
+        self.document = replace(self.document, **values)
+        self.state.documents[place] = self.document
+
+    def flow(
+        self,
+        *triggers: WorkflowTrigger,
+        actions: Sequence[WorkflowAction] = (TAG_ACTION,),
+        enabled: bool = True,
+        name: str = "W",
+    ) -> None:
+        self.state.workflows = [
+            Workflow(
+                id=1, name=name, order=3, enabled=enabled, triggers=triggers, actions=tuple(actions)
+            )
+        ]
+
+    def consumed(self, task_id: str = TASK, *, document: int = 1, minutes: int = -1) -> None:
+        self.state.tasks.append(
+            FakeTask(
+                id=len(self.state.tasks) + 1,
+                task_id=task_id,
+                status="success",
+                created=ADDED + timedelta(minutes=minutes),
+                document_ids=(document,),
+                trigger_source="api_upload",
+            )
+        )
+
+    async def explain(self) -> WorkflowExplanation:
+        return await self.service.explain(1, 1)
+
+    async def checks(self, *triggers: WorkflowTrigger) -> list[FilterCheck]:
+        self.flow(*triggers)
+        [explained] = (await self.explain()).triggers
+        return list(explained.checks)
+
+
+type Case = tuple[dict[str, JsonValue], dict[str, object], str, str]
+
+
+def references(one: str, plural: str) -> list[Case]:
+    return [
+        ({f"filter_has_{one}": 1}, {one: 1}, f"has_{one}", "ok"),
+        ({f"filter_has_{one}": 1}, {one: None}, f"has_{one}", "no"),
+        ({f"filter_has_any_{plural}": [1]}, {one: 1}, f"has_any_{plural}", "ok"),
+        ({f"filter_has_any_{plural}": [1]}, {one: None}, f"has_any_{plural}", "no"),
+        ({f"filter_has_not_{plural}": [1]}, {one: None}, f"has_not_{plural}", "ok"),
+        ({f"filter_has_not_{plural}": [1]}, {one: 1}, f"has_not_{plural}", "no"),
+    ]
+
+
+CASES: list[Case] = [
+    ({"filter_has_tags": [1, 2]}, {"tags": [1]}, "has_tags", "ok"),
+    ({"filter_has_tags": [1, 2]}, {"tags": [4]}, "has_tags", "no"),
+    ({"filter_has_tags": [1, 2]}, {"tags": []}, "has_tags", "no"),
+    ({"filter_has_all_tags": [1, 2]}, {"tags": [1, 2, 4]}, "has_all_tags", "ok"),
+    ({"filter_has_all_tags": [1, 2]}, {"tags": [1]}, "has_all_tags", "no"),
+    ({"filter_has_not_tags": [1]}, {"tags": [2]}, "has_not_tags", "ok"),
+    ({"filter_has_not_tags": [1]}, {"tags": [1, 2]}, "has_not_tags", "no"),
+    ({"filter_filename": "*INV*.pdf"}, {"file_name": "my-inv-1.PDF"}, "filename", "ok"),
+    ({"filter_filename": "inv*"}, {"file_name": "my-inv-1.pdf"}, "filename", "no"),
+    *references("correspondent", "correspondents"),
+    *references("document_type", "document_types"),
+    *references("storage_path", "storage_paths"),
+]
+
+
+@pytest.mark.parametrize("kind", [2, 3, 5])
+@pytest.mark.parametrize(
+    ("settings", "values", "name", "result"),
+    CASES,
+    ids=[f"{c[2]}-{c[3]}-{n}" for n, c in enumerate(CASES)],
+)
+async def test_every_filter_is_compared_with_the_document(
+    settings: dict[str, JsonValue],
+    values: dict[str, object],
+    name: str,
+    result: str,
+    kind: int,
+) -> None:
+    setup = Setup()
+    setup.put(values)
+
+    [check] = await setup.checks(trigger(kind, settings=settings))
+    answer = await setup.explain()
+
+    assert (check.filter, check.result) == (name, result)
+    assert answer.triggers[0].matches == {"ok": "yes", "no": "no"}[result]
+    assert answer.would_match_now == answer.triggers[0].matches
+    assert answer.did_run == "unknown"
+
+
+async def test_the_checks_stand_in_the_order_of_paperless() -> None:
+    setup = Setup()
+    every: dict[str, JsonValue] = {
+        "filter_filename": "x",
+        "filter_custom_field_query": '["e2e-string","exists",true]',
+        "filter_has_tags": [1],
+        "filter_has_all_tags": [1],
+        "filter_has_not_tags": [1],
+        "match": "x",
+        "matching_algorithm": 1,
+    }
+    for single, several in (
+        ("correspondent", "correspondents"),
+        ("document_type", "document_types"),
+        ("storage_path", "storage_paths"),
+    ):
+        every |= {
+            f"filter_has_{single}": 1,
+            f"filter_has_any_{several}": [1],
+            f"filter_has_not_{several}": [1],
+        }
+    checks = await setup.checks(trigger(settings=every))
+
+    assert [c.filter for c in checks] == [
+        *("match", "has_tags", "has_all_tags", "has_not_tags"),
+        *("has_any_correspondents", "has_correspondent", "has_not_correspondents"),
+        *("has_any_document_types", "has_document_type", "has_not_document_types"),
+        *("has_any_storage_paths", "has_storage_path", "has_not_storage_paths"),
+        *("custom_field_query", "filename"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("match", "algorithm", "ignore_case", "text", "found"),
+    [
+        ("invoice", 1, True, "An INVOICE here", True),
+        ("invoice", 1, False, "An INVOICE here", False),
+        ("other invoice", 1, True, "an invoice", True),
+        ("invoice", 1, True, "invoices", False),
+        ("an invoice", 2, True, "an old invoice", True),
+        ("an bill", 2, True, "an old invoice", False),
+        ('"old   invoice"', 2, True, "an old\n invoice", True),
+        ("a.c", 1, True, "abc", False),
+        ("old invoice", 3, True, "an old invoice", True),
+        ("old invoice", 3, True, "an old  invoice", False),
+        ("  ", 1, True, "anything", False),
+        ("x", 4, True, "x", None),
+        ("x", 5, True, "x", None),
+        ("x", 9, True, "x", None),
+    ],
+)
+def test_content_is_matched_as_paperless_does(
+    match: str, algorithm: int, text: str, *, ignore_case: bool, found: bool | None
+) -> None:
+    assert content_matches(text, match, algorithm, ignore_case=ignore_case) is found
+
+
+async def test_the_text_of_the_document_is_compared_and_never_shown() -> None:
+    setup = Setup()
+    setup.document.content = "secret words here"
+
+    [found] = await setup.checks(trigger(match="words", matching_algorithm=1))
+    [missed] = await setup.checks(trigger(match="other", matching_algorithm=2))
+    [regex] = await setup.checks(trigger(match="(a+)+$", matching_algorithm=4))
+    [other_case] = await setup.checks(
+        trigger(match="WORDS", matching_algorithm=1, is_insensitive=False)
+    )
+    [any_case] = await setup.checks(trigger(match="WORDS", matching_algorithm=1))
+    assert (other_case.result, any_case.result) == ("no", "ok")
+    setup.fake.broken = True
+    [unread] = await setup.checks(trigger(match="words", matching_algorithm=3))
+    answer = await setup.explain()
+
+    assert [c.result for c in (found, missed, regex, unread)] == ["ok", "no", "unknown", "unknown"]
+    assert regex.why == "regex is not checked here"
+    assert "the text: Paperless did not answer in time." in answer.not_checked
+    assert answer.would_match_now == "unknown"
+    assert "secret" not in answer.model_dump_json()
+
+
+async def test_the_text_is_not_read_for_a_consumption_trigger() -> None:
+    setup = Setup()
+    setup.fake.broken = True
+    setup.flow(trigger(1, match="x", matching_algorithm=1, filter_filename="a"))
+
+    assert "the text" not in str((await setup.explain()).not_checked)
+
+
+async def test_a_custom_field_query_is_asked_of_paperless() -> None:
+    setup = Setup()
+    setup.document.custom_fields = {1: "x"}
+
+    for query, result in (
+        ('["e2e-string", "exact", "x"]', "ok"),
+        ('["e2e-string", "exact", "y"]', "no"),
+        ('["no such field", "exists", true]', "no"),
+        ("{", "no"),
+    ):
+        [check] = await setup.checks(trigger(filter_custom_field_query=query))
+        assert (check.filter, check.result) == ("custom_field_query", result)
+    setup.times = [0.0, 99.0, 99.0, 99.0, 99.0]
+    [late] = await setup.checks(trigger(filter_custom_field_query="[]"))
+    assert late.result == "unknown"
+
+
+async def test_what_a_consumption_trigger_saw_is_mostly_unknown() -> None:
+    setup = Setup()
+    setup.document.file_name = "a.pdf"
+    settings: dict[str, JsonValue] = {
+        "sources": [1, 4],
+        "filter_mailrule": 3,
+        "filter_filename": "a*",
+        "filter_path": "/in/*",
+    }
+    setup.consumed()
+
+    checks = await setup.checks(trigger(1, settings=settings))
+    other = await setup.checks(trigger(1, sources=[], filter_filename="b*"))
+
+    assert [(c.filter, c.result) for c in checks] == [
+        ("sources", "unknown"),
+        ("mailrule", "unknown"),
+        ("filename", "ok"),
+        ("path", "unknown"),
+    ]
+    assert checks[0].why == (
+        "where it came from (it came by api_upload) has to be consume_folder, web_ui"
+    )
+    assert [(c.filter, c.result) for c in other] == [("filename", "no")]
+
+
+async def test_a_document_without_a_file_name_passes_but_not_a_schedule() -> None:
+    setup = Setup()
+    setup.fake.nameless = True
+
+    [added] = await setup.checks(trigger(filter_filename="a"))
+    scheduled = await setup.checks(trigger(4, filter_filename="a"))
+
+    assert (added.result, added.why) == ("ok", "it has no original file name")
+    assert scheduled[-1].result == "no"
+
+
+@pytest.mark.parametrize(
+    ("settings", "result"),
+    [
+        ({"schedule_date_field": "added", "schedule_offset_days": 3}, "no"),
+        ({"schedule_date_field": "added", "schedule_offset_days": -3}, "ok"),
+        ({"schedule_date_field": "modified", "schedule_offset_days": 0}, "ok"),
+        ({"schedule_date_field": "created", "schedule_offset_days": 400}, "no"),
+        ({"schedule_date_field": "created", "schedule_offset_days": 2}, "ok"),
+        ({"schedule_date_field": "custom_field", "schedule_date_custom_field": 3}, "ok"),
+        (
+            {
+                "schedule_date_field": "custom_field",
+                "schedule_date_custom_field": 3,
+                "schedule_offset_days": 100,
+            },
+            "no",
+        ),
+        ({"schedule_date_field": "custom_field", "schedule_date_custom_field": 4}, "no"),
+        ({"schedule_date_field": "custom_field", "schedule_date_custom_field": 5}, "no"),
+        ({"schedule_date_field": "custom_field", "schedule_date_custom_field": 1}, "no"),
+    ],
+)
+async def test_a_schedule_is_compared_by_its_date(
+    settings: dict[str, JsonValue], result: str
+) -> None:
+    setup = Setup()
+    setup.document.added = NOW - timedelta(days=1)
+    setup.document.modified = NOW - timedelta(hours=1)
+    setup.document.created = NOW.date() - timedelta(days=30)
+    old = (NOW - timedelta(days=500)).date().isoformat()
+    setup.document.custom_fields = {3: NOW.date().isoformat(), 4: old, 1: "no date"}
+
+    once = await setup.checks(trigger(4, settings=settings))
+    again = await setup.checks(trigger(4, settings=settings, schedule_is_recurring=True))
+    answer = await setup.explain()
+    setup.flow(trigger(4, settings=settings))
+    first = await setup.explain()
+
+    assert first.triggers[0].matches == answer.triggers[0].matches
+    assert (once[0].filter, once[0].result) == ("schedule_date_field", result)
+    assert [c.filter for c in once[1:]] == (["schedule_is_recurring"] if len(once) > 1 else [])
+    assert "schedule_is_recurring" not in [c.filter for c in again]
+    assert answer.triggers[0].matches == ("yes" if result == "ok" else "no")
+
+
+async def test_the_last_change_of_a_value_is_told_by_the_history() -> None:
+    setup = Setup()
+    setup.document.tags = [4]
+
+    def entry(number: int, day: int, actor: str | None, **changes: JsonValue) -> HistoryEntry:
+        return HistoryEntry(
+            id=number,
+            timestamp=datetime(2026, 11, day, tzinfo=UTC),
+            action="update",
+            actor=actor,
+            changes=dict(changes),
+        )
+
+    setup.document.history = [
+        entry(3, 22, None, tags={"type": "m2m"}),
+        entry(2, 21, "bob", tags={"type": "m2m"}, correspondent=["None", "x"]),
+    ]
+    tags, correspondent, name = await setup.checks(
+        trigger(filter_has_tags=[4], filter_has_correspondent=1, filter_filename="*")
+    )
+
+    assert tags.last_change == (
+        "2026-11-22T00:00:00+00:00 by nobody (a workflow, automatic matching or the system)"
+    )
+    assert correspondent.last_change == "2026-11-21T00:00:00+00:00 by 'bob'"
+    assert name.last_change is None
+
+
+async def test_names_the_user_may_not_see_are_numbers() -> None:
+    setup = Setup(READER[0], grant=("view_workflow",))
+    setup.document.tags = [3, 1]
+
+    [check] = await setup.checks(trigger(filter_has_tags=[3]))
+
+    assert check.result == "ok"
+    assert "#3" in check.why
+    assert "e2e-private" not in check.why
+    assert "'e2e-finance'" in check.why
+
+
+async def test_without_the_right_to_list_tags_they_are_numbers() -> None:
+    setup = Setup(READER[0], grant=("view_workflow",))
+    user = setup.fake.user
+    setup.fake.user = replace(user, permissions=user.permissions - {"view_tag"})
+    setup.document.tags = [1]
+
+    [check] = await setup.checks(trigger(filter_has_tags=[1]))
+
+    assert check.why == "it has the tags #1; wanted is one of #1"
+
+
+async def test_what_may_not_be_read_is_named_and_the_rest_is_told() -> None:
+    setup = Setup(READER[0], grant=("view_workflow",))
+    setup.flow(trigger())
+
+    answer = await setup.explain()
+
+    assert answer.note == NOTE
+    assert [text.split(":")[0] for text in answer.not_checked] == [
+        "the history (needs the right to view the audit log)",
+        "the consume task (needs the right to view tasks)",
+        "the log (needs a staff user)",
+    ]
+    assert answer.would_match_now == "yes"
+    with pytest.raises(PermissionDenied):
+        _ = await Setup(READER[0]).service.explain(1, 1)
+    with pytest.raises(NotFound):
+        _ = await setup.service.explain(1, 999)
+    with pytest.raises(NotFound):
+        _ = await setup.service.explain("nope", 1)
+
+
+async def test_no_source_is_asked_after_the_time_is_up() -> None:
+    setup = Setup()
+    setup.flow(trigger())
+    setup.times = [0.0, 1.0, 40.0, 41.0]
+
+    answer = await setup.explain()
+
+    assert answer.not_checked == (
+        "the consume task (needs the right to view tasks): the time was up",
+        "the log (needs a staff user): the time was up",
+    )
+
+
+MATCHED = "Document matched WorkflowTrigger 7 from Workflow: W"
+APPLIED = "Applying WorkflowAction 8 from Workflow: W"
+MISSED = "Document did not match Workflow: W"
+
+
+async def test_the_log_is_this_document_s_only_by_its_consume_task() -> None:
+    setup = Setup()
+    setup.consumed()
+    setup.consumed("ffffffff-1111-4222-8333-444455556666", document=2)
+    setup.flow(trigger())
+    setup.state.logs["paperless"] = [
+        line("Rest of something", at="10:00:00"),
+        line(MISSED, task="0badcafe"),
+        line("Document filename secret-name.pdf does not match x", task="0badcafe"),
+        line(MATCHED, task="0badcafe"),
+        line(APPLIED, task="0badcafe", name=HANDLERS),
+        line(MATCHED, task="ffffffff"),
+        line(MATCHED, at="19:48:30"),
+        line(MATCHED, at="19:59:00"),
+        line("Document matched WorkflowTrigger 99 from Workflow: W", at="19:48:30"),
+        line(MATCHED + "2", at="19:48:30"),
+    ]
+
+    answer = await setup.explain()
+
+    assert answer.log == (
+        LogFinding(
+            time="2026-11-11 19:47:20",
+            said="the document did not match: the file name does not match",
+            whose="this document",
+        ),
+        LogFinding(
+            time="2026-11-11 19:47:20",
+            said="the document matched trigger 7",
+            whose="this document",
+        ),
+        LogFinding(time="2026-11-11 19:47:20", said="action 8 was applied", whose="this document"),
+        LogFinding(
+            time="2026-11-11 19:48:30",
+            said="the document matched trigger 7",
+            whose="perhaps this document",
+        ),
+    )
+    assert (answer.did_run, answer.log_from) == ("yes", "2026-11-11 10:00:00")
+    assert answer.message.endswith("The log says that it ran on this document.")
+    assert "secret-name" not in answer.model_dump_json()
+
+
+async def test_without_the_task_nothing_is_certain() -> None:
+    setup = Setup()
+    setup.flow(trigger())
+    setup.state.logs["paperless"] = [line(MATCHED, task="0badcafe"), line(MATCHED)]
+
+    answer = await setup.explain()
+
+    assert [f.whose for f in answer.log] == ["perhaps this document"]
+    assert answer.did_run == "unknown"
+    assert answer.not_checked == ("the consume task of the document was not found",)
+    assert answer.message.endswith("Whether it ran is not known.")
+
+
+async def test_a_record_of_not_matching_is_no_run() -> None:
+    setup = Setup()
+    setup.consumed()
+    setup.flow(trigger())
+    setup.state.logs["paperless"] = [line(MISSED, task="0badcafe")]
+
+    answer = await setup.explain()
+
+    assert answer.did_run == "unknown"
+    assert answer.log[0].said == "the document did not match"
+
+
+async def test_the_time_zone_of_paperless_is_that_of_its_timestamps() -> None:
+    setup = Setup()
+    zone = timezone(timedelta(hours=1))
+    setup.document.added = ADDED.astimezone(zone)
+    setup.flow(trigger())
+    setup.state.logs["paperless"] = [line(MATCHED, at="20:47:40"), line(MATCHED, at="19:47:40")]
+
+    answer = await setup.explain()
+
+    assert [f.time for f in answer.log] == ["2026-11-11 20:47:40"]
+
+
+async def test_records_near_a_change_of_the_document_are_perhaps_its_own() -> None:
+    setup = Setup()
+    setup.document.history = [
+        HistoryEntry(
+            id=1,
+            timestamp=datetime(2026, 11, 11, 21, 0, tzinfo=UTC),
+            action="update",
+            actor=None,
+            changes={},
+        )
+    ]
+    setup.flow(trigger(3))
+    setup.state.logs["paperless"] = [line(MISSED, at="21:01:30"), line(MISSED, at="21:02:30")]
+
+    assert [f.time for f in (await setup.explain()).log] == ["2026-11-11 21:01:30"]
+
+
+REASONS = [
+    ("Document source ApiUpload not in ['MailFetch']", "the source is not among"),
+    ("Document mail rule None != 3", "another mail rule"),
+    ("Document filename P does not match x", "the file name does not match"),
+    ("Document path P does not match x", "the path does not match"),
+    ("Document content matching settings for algorithm '1' did not match", "the content"),
+    ("Document tags [P] do not include [P]", "none of the tags is there"),
+    ("Document tags [P] do not contain all of [P]", "not all of the tags are there"),
+    ("Document tags [P] include excluded tags [P]", "an excluded tag is there"),
+    ("Document correspondent P is excluded by [P]", "the correspondent is excluded"),
+    ("Document correspondent P is not one of [P]", "another correspondent"),
+    ("Document correspondent P does not match P", "another correspondent"),
+    ("Document doc type P is excluded by [P]", "the document type is excluded"),
+    ("Document doc type P does not match P", "another document type"),
+    ("Document storage path P is excluded by [P]", "the storage path is excluded"),
+    ("Document storage path P is not one of [P]", "another storage path"),
+    ("Document custom fields do not match the configured custom field query", "the custom field"),
+    ("Invalid custom field query configuration", "the custom field query is not valid"),
+    ("No matching triggers with type 2 found", "it has no trigger for this event"),
+    ("Something new about P", ""),
+]
+
+
+@pytest.mark.parametrize(("reason", "said"), REASONS, ids=[r[0][:40] for r in REASONS])
+async def test_reasons_are_told_without_names(reason: str, said: str) -> None:
+    setup = Setup()
+    setup.consumed()
+    setup.flow(trigger())
+    planted = reason.replace("P", "planted\nname")
+    setup.state.logs["paperless"] = [
+        line(MISSED, task="0badcafe"),
+        *line(planted, task="0badcafe").split("\n"),
+    ]
+
+    answer = await setup.explain()
+
+    [finding] = answer.log
+    assert finding.said.startswith("the document did not match" + (f": {said}" if said else ""))
+    if not said:
+        assert finding.said == "the document did not match"
+    assert "planted" not in answer.model_dump_json()
+
+
+async def test_a_reason_of_another_task_or_logger_is_not_taken() -> None:
+    setup = Setup()
+    setup.consumed()
+    setup.flow(trigger())
+    reason = "Document correspondent x does not match y"
+    for after in (line(reason), line(reason, task="0badcafe", name=HANDLERS)):
+        setup.state.logs["paperless"] = [line(MISSED, task="0badcafe"), after]
+        assert (await setup.explain()).log[0].said == "the document did not match"
+
+
+async def test_only_the_last_findings_are_told() -> None:
+    setup = Setup()
+    setup.consumed()
+    setup.flow(trigger())
+    setup.state.logs["paperless"] = [
+        line(MATCHED, at=f"19:{n:02d}:00", task="0badcafe") for n in range(30)
+    ]
+
+    found = (await setup.explain()).log
+
+    assert (len(found), found[-1].time) == (20, "2026-11-11 19:29:00")
+
+
+@pytest.mark.parametrize(
+    ("triggers", "actions", "enabled", "verdict", "said"),
+    [
+        ((trigger(),), (TAG_ACTION,), False, "no", "is not enabled, so it does not run."),
+        ((), (TAG_ACTION,), True, "no", "has no trigger, so it does not run."),
+        ((trigger(),), (), True, "yes", "has no action, so it does nothing."),
+        ((trigger(),), (TAG_ACTION,), True, "yes", "matches the document as both are now."),
+        (
+            (trigger(filter_has_tags=[99]),),
+            (TAG_ACTION,),
+            True,
+            "no",
+            "First reason: has_tags: it has the tags",
+        ),
+        ((trigger(match="x", matching_algorithm=4),), (TAG_ACTION,), True, "unknown", "may match"),
+        ((trigger(5),), (TAG_ACTION,), True, "yes", "It runs only when a user runs it by hand."),
+        ((trigger(99),), (TAG_ACTION,), True, "unknown", "may match"),
+        (
+            (trigger(filter_has_tags=[99]), trigger(5, 9)),
+            (TAG_ACTION,),
+            True,
+            "yes",
+            "matches the document as both are now.",
+        ),
+    ],
+)
+async def test_the_message_says_what_stands_in_the_way(
+    triggers: tuple[WorkflowTrigger, ...],
+    actions: tuple[WorkflowAction, ...],
+    verdict: str,
+    said: str,
+    *,
+    enabled: bool,
+) -> None:
+    setup = Setup()
+    setup.flow(*triggers, actions=actions, enabled=enabled)
+
+    answer = await setup.explain()
+
+    assert answer.would_match_now == verdict
+    assert said in answer.message
+    assert answer.message.startswith("The workflow 'W' (id 1) ")
+
+
+async def test_the_answer_is_bounded_and_says_what_is_left_out() -> None:
+    setup = Setup()
+    many = cast("list[JsonValue]", list(range(1, 200)))
+    filters: dict[str, JsonValue] = {
+        f"filter_{n}_tags": many for n in ("has", "has_all", "has_not")
+    }
+    setup.flow(*(trigger(2, n, filters) for n in range(1, 200)))
+
+    answer = await setup.explain()
+
+    assert len(json.dumps(answer.model_dump(mode="json"))) <= MAX_CHARS
+    assert 0 < len(answer.triggers) < 199
+    gone = 199 - len(answer.triggers)
+    assert answer.not_checked[-1] == (
+        f"{gone} of the triggers are left out: the answer would be too long"
+    )
+    assert answer.triggers[0].checks[0].why.endswith("#8, #9, #10 and 189 more")
+
+
+WORDS = st.text(alphabet='ab c"\n.', max_size=12)
+
+
+@given(text=WORDS, match=WORDS, algorithm=st.integers(1, 3), ignore_case=st.booleans())
+def test_content_matching_is_that_of_the_paperless_source(
+    text: str, match: str, algorithm: int, *, ignore_case: bool
+) -> None:
+    """Against a copy of `matches` and `_split_match` of 3.5.1."""
+    flags = re.IGNORECASE if ignore_case else 0
+    terms = [
+        re.escape(re.sub(r"\s+", " ", (t[0] or t[1]).strip())).replace(r"\ ", r"\s+")
+        for t in cast("list[tuple[str, str]]", re.findall(r'"([^"]+)"|(\S+)', match))
+    ]
+    if not match.strip():
+        expected = False
+    elif algorithm == 3:
+        expected = bool(re.search(rf"\b{re.escape(match)}\b", text, flags))
+    else:
+        hits = [bool(re.search(rf"\b{term}\b", text, flags)) for term in terms]
+        expected = any(hits) if algorithm == 1 else all(hits)
+
+    assert content_matches(text, match, algorithm, ignore_case=ignore_case) is expected
