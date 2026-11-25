@@ -218,6 +218,7 @@ class ViewService:
             Ambiguous: A name matches several views or objects.
             PermissionDenied: The user may not change saved views, or this one.
         """
+        removed = cleared(edit)
         found = self._changeable(await self._find(view))
         changes: dict[str, object] = {}
         if edit.name is not None:
@@ -226,7 +227,7 @@ class ViewService:
         if edit.rules is not None:
             changes["filter_rules"] = await self._rules(edit.rules)
         kept = {"sort_field", "sort_reverse", "page_size", *DISPLAY}
-        changes |= edit.model_dump(include=kept, exclude_none=True) | cleared(edit)
+        changes |= edit.model_dump(include=kept, exclude_none=True) | removed
         if not changes:
             message = "Nothing to change: no setting was named."
             raise Validation(message, hint="Name a setting to change or to clear.")
@@ -298,7 +299,7 @@ class ViewService:
     async def _check_display(self, given: ViewCreate | ViewEdit) -> None:
         """Refuse an icon or display fields Paperless rejects, fails on or stores for nothing."""
         if given.icon is not None and given.icon not in ICONS:
-            message = f"No icon of saved views is called {given.icon!r}."
+            message = f"No icon of saved views is called {quoted(given.icon)}."
             raise Validation(message, hint=f"Use one of {', '.join(ICONS)}.")
         fields = given.display_fields
         if fields is None:
@@ -317,7 +318,7 @@ class ViewService:
             if number is not None:
                 _ = await self._taxonomy.resolve("custom_field", number)
             elif field not in DISPLAY_FIELDS:
-                message = f"No display field is called {field!r}."
+                message = f"No display field is called {quoted(field)}."
                 raise Validation(
                     message, hint=f"Use {', '.join(DISPLAY_FIELDS)} or custom_field_<id>."
                 )
