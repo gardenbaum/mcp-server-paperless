@@ -419,11 +419,10 @@ you have to own every document, or it has no owner.
 Off by default. Administers the instance: users (`get_user`, `create_user`, `update_user`,
 `delete_user`), groups (`get_group`, `create_group`, `update_group`, `delete_group`), the
 application configuration (`get_app_config`, `update_app_config`), logs (`list_logs`,
-`get_log`) and
-`bulk_download`, which hands over the files of several documents as one ZIP archive: attached
-within the download limit, in parts, or saved (see [Uploads and downloads](#uploads-and-downloads)).
-`list_users` and `list_groups` of the `permissions` toolset find the users and
-groups.
+`get_log`) and `bulk_download`, which hands over the files of several documents as one ZIP archive:
+attached within the download limit, in parts, or saved (see
+[Uploads and downloads](#uploads-and-downloads)). `list_users` and `list_groups` of the
+`permissions` toolset find the users and groups.
 
 - Anything that gives or takes away access needs `confirm`, and the refusal names who is
   affected: creating a superuser or staff user or a user with a password, groups or permissions;
@@ -437,40 +436,40 @@ groups.
   keeps what is stored; written with an empty user name (`https://@host/path`) it loses them.
 - The account the server signs in with cannot be deleted, deactivated or stripped of its
   superuser status through these tools.
-- Paperless decides who may do what: most tools need the matching Paperless permission, the
-  logs are for staff users.
-- Log lines come without the user name and password of the URLs in them (`note` says
-  so).
+- Paperless decides who may do what: most tools need the matching Paperless permission, the logs
+  are for staff users.
+- Log lines come without the user name and password of the URLs in them (`note` says so).
 
 ### `tasks`
 
 Off by default. The background tasks of Paperless: uploads, mail fetches, sanity checks, classifier
-training and the rest. `list_tasks` lists them with every filter Paperless has (state, type, source,
-seen or not, ended or not, owner, file name, result, time) and in any of its orders,
+training and the rest. `list_tasks` lists them with every filter Paperless has (state, type,
+source, seen or not, ended or not, owner, file name, result, time) and in any of its orders,
 `get_task_overview` counts them, shows what runs and how each type did, `acknowledge_tasks` marks
 them as seen, and `run_task` starts one. `get_task` of `core` follows one task by its `task_id`.
 `get_system_report` returns all of Paperless's statistics and system status, more than
 `get_instance_overview` of `core`.
 
-- `list_tasks`, `acknowledge_tasks` and `run_task` were in `admin` up to version 0.4: an operator who offered `admin` for them
-  adds `tasks` (decision-93). User administration is not needed for them.
+- `list_tasks`, `acknowledge_tasks` and `run_task` were in `admin` up to version 0.4: an operator
+  who offered `admin` for them adds `tasks` (decision-93). User administration is not needed for
+  them.
 - Staff users see every task, others their own and those without an owner. Of what a task was given
   only the file name is shown, not the server path or the metadata of an upload.
 - `name` finds part of the file's name, and also the words for type and source in the language of
   the server's Paperless user.
 - `acknowledge_tasks` with ids needs no `confirm`; with `all_unacknowledged` it does, after saying
-  how many tasks, which newest failures and whose they are, because there is no way back
-  (`dry_run` shows the same). Tasks that come in meanwhile are marked too.
+  how many tasks, which newest failures and whose they are, because there is no way back (`dry_run`
+  shows the same). Tasks that come in meanwhile are marked too.
 - The system status (host, database, Redis, workers, when each component last ran) is for staff,
   superusers and holders of `view_system_monitoring`; others get the statistics alone. URLs in it
   come without user name and password.
-- In `get_task_overview` the filters apply to the counts only: Paperless offers none for the running
-  tasks and the record by type. The record counts every user's tasks for who may view the system
-  status, and says so.
+- In `get_task_overview` the filters apply to the counts only: Paperless offers none for the
+  running tasks and the record by type. The record counts every user's tasks for who may view the
+  system status, and says so.
 - `run_task` starts the three types Paperless starts by hand, one per call. It needs `confirm` to
   train the classifier or update the AI index (which sends new and changed documents to the
-  embedding service); a sanity check only reads and needs none. It is for superusers; the other tools need the matching Paperless
-  permission.
+  embedding service); a sanity check only reads and needs none. It is for superusers; the other
+  tools need the matching Paperless permission.
 
 ### `raw`
 
@@ -542,7 +541,8 @@ model names the file instead of encoding it.
   is refused; subdirectories more than 32 levels down are named, not read. What does not fit is named,
   and `next_after` goes on with the directory: it has to be passed unchanged, a file added before it
   meanwhile is missed (the number of files before it is said), and failed files are not repeated. After
-  a timeout or an aborted call the report is lost: look at `list_tasks` (or the server's log) before
+  a timeout or an aborted call the report is lost: look at `list_tasks` (toolset
+  `tasks`) or the server's log before
   repeating it. In reports a backslash in a name is doubled and characters nobody sees are escaped;
   `paths` and `directory` take paths in that form. It never sends a known duplicate: `upload_document` with `confirm` does, one
   by one. Equal files in two calls at once are not noticed until Paperless consumed the first. The
