@@ -44,7 +44,7 @@ from mcp_server_paperless.services.tag_hierarchy import (
     blocked_removals,
     close_over_ancestors,
 )
-from mcp_server_paperless.services.taxonomy import names_apart
+from mcp_server_paperless.services.taxonomy import names_apart, option_shown
 from mcp_server_paperless.services.taxonomy_edits import documents as count_documents
 
 if TYPE_CHECKING:
@@ -435,6 +435,8 @@ def _shown(value: JsonValue, field: TaxonomyItem, linked: dict[int, DocumentHit]
         hits = [linked[n] for n in _document_ids(value)]
         hits.sort(key=lambda hit: value.index(hit.id))
         return named(titled(hits)) if hits else "no document"
+    if field.data_type == "select" and isinstance(value, str):
+        return option_shown(field, value)
     text = readable(value, field)
     return quoted(text) if isinstance(text, str) else json.dumps(text)
 

@@ -66,7 +66,7 @@ from mcp_server_paperless.services.document_runner import (
 )
 from mcp_server_paperless.services.documents import document_link, known_items, readable
 from mcp_server_paperless.services.selection import SELECT_BYTES
-from mcp_server_paperless.services.taxonomy import fold
+from mcp_server_paperless.services.taxonomy import fold, names_apart, option_shown
 from mcp_server_paperless.services.taxonomy_edits import documents as count_documents
 
 if TYPE_CHECKING:
@@ -175,10 +175,19 @@ class _Names:
     known: dict[TaxonomyKind, dict[int, TaxonomyItem]]
     titles: dict[int, str]
     created: dict[int, str] = field(default_factory=dict[int, str])
+    apart: dict[TaxonomyKind, dict[int, str]] = field(
+        default_factory=dict["TaxonomyKind", dict[int, str]], init=False
+    )
 
     def of(self, kind: TaxonomyKind, number: int) -> str:
         item = self.known.get(kind, {}).get(number)
         return item.name if item else self.created.get(number, f"#{number}")
+
+    def shown(self, kind: TaxonomyKind, number: int) -> str:
+        """The name quoted, with the id where another object would be shown alike."""
+        if kind not in self.apart:
+            self.apart[kind] = names_apart([*self.known.get(kind, {}).values()])
+        return self.apart[kind].get(number) or quoted(self.of(kind, number))
 
     def document(self, number: int) -> str:
         title = self.titles.get(number)
@@ -523,12 +532,16 @@ class BulkUpdates:
                     for v in (old, new)
                 ]
                 label = name.replace("_", " ")
-                text = f"{_shown(told[0], names)} -> {_shown(told[1], names)}"
+                seen = [
+                    names.shown(kind, v) if kind and isinstance(v, int) else _shown(t, names)
+                    for v, t in zip((old, new), told, strict=True)
+                ]
+                text = f"{seen[0]} -> {seen[1]}"
                 value = ValueChange(field=name, old=told[0], new=told[1])
                 found.append(_Change(value, label, f"{label} {text}"))
         if item.plan.tags.named and set(before.tags) != set(after.tags):
-            gained = [f"+{quoted(names.of('tag', t))}" for t in after.tags if t not in before.tags]
-            lost = [f"-{quoted(names.of('tag', t))}" for t in before.tags if t not in after.tags]
+            gained = [f"+{names.shown('tag', t)}" for t in after.tags if t not in before.tags]
+            lost = [f"-{names.shown('tag', t)}" for t in before.tags if t not in after.tags]
             value = ValueChange(
                 field="tags",
                 old=[names.of("tag", t) for t in before.tags],
@@ -544,13 +557,18 @@ class BulkUpdates:
         found: list[_Change] = []
         for number in sorted(item.fields):
             known = names.known.get("custom_field", {}).get(number)
-            old, new = (readable(v.get(number), known) for v in (before, after))
+            raw = [v.get(number) for v in (before, after)]
+            old, new = (readable(value, known) for value in raw)
             if (number in before) == (number in after) and _comparable(old) == _comparable(new):
                 continue
             name = names.of("custom_field", number)
             link = known is not None and known.data_type == "documentlink"
             label = quoted(name)
-            text = f"{_shown(old, names, link=link)} -> {_shown(new, names, link=link)}"
+            if known is not None and known.data_type == "select":
+                seen = [option_shown(known, v) if isinstance(v, str) else "none" for v in raw]
+            else:
+                seen = [_shown(value, names, link=link) for value in (old, new)]
+            text = f"{seen[0]} -> {seen[1]}"
             if number not in after:
                 text = "removed"
             value = ValueChange(field=f"custom_fields.{name}", old=old, new=new)

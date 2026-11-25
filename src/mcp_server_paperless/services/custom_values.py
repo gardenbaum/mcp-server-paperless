@@ -61,7 +61,7 @@ def _select(field: TaxonomyItem, value: object) -> str:
         [o for o in options if fold(o.label) == fold(label)],
     ):
         if matches:
-            found = pick_option(field.name, options, label, matches)
+            found = pick_option(field, label, matches)
             if not isinstance(found, Question):
                 return found.id
             names = ", ".join(repr(o.label) for o in matches)

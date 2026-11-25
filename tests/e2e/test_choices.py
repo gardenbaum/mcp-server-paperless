@@ -182,7 +182,7 @@ async def test_one_of_two_options_with_one_label_is_set_in_a_batch(
 
         assert not result.is_error, result.content
         assert len(shown.questions) == 1
-        assert "'Open' (option 2 of 3)" in str(shown.schemas)
+        assert "'Open', option 2 of 3" in str(shown.schemas)
         stored = cast("Json", stack.admin.get(f"/api/documents/{document}/").json())
         values = cast("list[Json]", stored["custom_fields"])
         assert [v["value"] for v in values if v["field"] == number] == [options[1]]

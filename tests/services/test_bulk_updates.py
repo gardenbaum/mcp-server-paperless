@@ -411,7 +411,7 @@ async def test_when_every_refused_item_is_ambiguous_the_first_question_is_asked(
 async def test_picks_for_the_items_go_on_to_the_confirmation_and_write_what_was_picked() -> None:
     setup = Setup()
     doubles(setup)
-    items = [item(101, tags_add=["TWIN"]), item(102, tags_remove=["TWIN"], title="Neu")]
+    items = [item(101, tags_add=["TWIN"]), item(102, tags_add=["TWIN"], title="Neu")]
     with pytest.raises(Ambiguous) as raised:
         _ = await setup.run(*items)
     assert raised.value.question is not None
@@ -1446,7 +1446,9 @@ async def test_an_ordinary_refusal_is_told_in_full_as_a_single_update_tells_it()
     setup = Setup(writes=False)
     setup.state.tags += [FakeTag(id=500 + n, name="Bill " * 14 + "Bill", owner=2) for n in range(8)]
 
-    refusal = await setup.refused(item(101, tags_add=["bill " * 15]), named(102))
+    with pytest.raises(Ambiguous) as raised:  # not a Validation: nothing else is wrong
+        _ = await setup.run(item(101, tags_add=["bill " * 15]), named(102))
+    refusal = raised.value
 
     assert all(f"(id {500 + n})" in refusal.message for n in range(8))
     assert "Pass the id of the one you mean." in refusal.message

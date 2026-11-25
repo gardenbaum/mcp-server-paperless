@@ -61,6 +61,8 @@ MAX_DIALOGS: Final = 3
 # rounds).
 MAX_PICKS: Final = 5
 MAX_CHOICES: Final = 20
+# Characters of an error that a 2026-07-28 client carries for after a no; it had none in full.
+MAX_KEPT: Final = 8_000
 # The first protocol version with titled options as ``oneOf``.
 ONE_OF: Final = "2025-11-25"
 
@@ -100,7 +102,7 @@ class Asked(BaseModel):
     Attributes:
         fingerprint: The refusal or the question that is asked about.
         picks: The user's picks before this question.
-        error: The whole error when the user is asked for a pick, None for a confirmation.
+        error: The error (``MAX_KEPT``) when the user is asked for a pick, None for a confirmation.
         topic: The topic of that question.
         choices: The values the pick may have.
     """
@@ -325,7 +327,10 @@ class _Asking:
         picks: tuple[Pick, ...],
     ) -> InputRequiredResult:
         values = tuple(choice.value for choice in question.choices)
-        more = {"topic": question.topic, "error": error.describe(), "choices": values}
+        cut = len(error.message) - MAX_KEPT
+        kept = f"{error.message[:MAX_KEPT]}… ({cut} more characters)" if cut > 0 else error.message
+        told = Ambiguous(kept, hint=error.hint).describe()
+        more = {"topic": question.topic, "error": told, "choices": values}
         asked = self._asked(question.fingerprint, picks).model_copy(update=more)
         return _asks(CHOICE, *form, asked)
 

@@ -29,7 +29,7 @@ from choices import (
     picks,
 )
 from confirmation import NOT_AGAIN, YES, answering, source, world
-from fakes.paperless import FakePaperless, FakeTag, FakeTaxonomy
+from fakes.paperless import FakeDocument, FakePaperless, FakeTag, FakeTaxonomy
 from fastmcp import Client, FastMCP
 from harness import serve
 from mcp import MCPError
@@ -37,9 +37,17 @@ from mcp.types import ElicitResult, InputRequiredResult, ListRootsResult
 
 from mcp_server_paperless.domain.choices import Choice, Pick, Question, note_write, picked
 from mcp_server_paperless.domain.errors import Ambiguous, PermissionDenied, UpstreamUnavailable
+from mcp_server_paperless.services.bulk_updates import CORRECT
 from mcp_server_paperless.tools import _shared
 from mcp_server_paperless.tools._shared import ANNOTATIONS, TOOL_TOOLSETS, boundary
-from mcp_server_paperless.tools.confirmation import DIALOGS, MAX_CHOICES, MAX_PICKS, Asked, Dialogs
+from mcp_server_paperless.tools.confirmation import (
+    DIALOGS,
+    MAX_CHOICES,
+    MAX_KEPT,
+    MAX_PICKS,
+    Asked,
+    Dialogs,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Iterator, Mapping
@@ -854,6 +862,34 @@ def test_a_state_of_a_dialog_holds_what_its_answer_needs() -> None:
         {"picks": None},
     ):
         assert Asked.parse(json.dumps({**good, **wrong})) is None
+
+
+async def test_a_state_holds_at_most_so_much_of_a_collected_error() -> None:
+    """100 documents, each with an ambiguous name of 128 characters of its own."""
+    state = world()
+    items: list[Json] = []
+    for n in range(100):
+        name = f"{n:03}" + "N" * 125
+        state.tags += [FakeTag(id=1000 + 2 * n + m, name=name, owner=m) for m in range(2)]
+        state.documents.append(FakeDocument(id=2000 + n, title="Scan", owner=2))
+        items.append({"document_id": 2000 + n, "tags_add": [name]})
+    arguments: Json = {"documents": items}
+    served = server(source(state, writes=False))
+
+    plain = text(await call(served, "auto", None, "update_documents", arguments))
+    waited = text(await call(served, "legacy", picks(None).handler, "update_documents", arguments))
+    async with Client(served, elicitation_handler=NEVER) as client:
+        token = state_of(await raw(client, None, None, arguments, tool="update_documents"))
+        kept = refused(
+            await raw(client, answer("decline"), token, arguments, tool="update_documents")
+        )
+
+    assert len(plain) > 4 * MAX_KEPT
+    assert waited == f"{plain} {NOT_PICKED}"
+    assert len(token) < 16 * 1024
+    assert kept[:200] == plain[:200]
+    assert kept.endswith(f" more characters) Hint: {CORRECT} {NOT_PICKED}")
+    assert len(kept) < MAX_KEPT + 500
 
 
 async def test_a_state_stays_small() -> None:

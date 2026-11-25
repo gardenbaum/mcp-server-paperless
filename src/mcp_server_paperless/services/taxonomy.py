@@ -113,20 +113,32 @@ def _not_contradicted(left: Question, label: str) -> None:
         raise Conflict(message, hint="Nothing was changed. Read the names again and ask.")
 
 
+def _place(field: TaxonomyItem, option: str) -> str:
+    ids = [o.id for o in field.select_options or ()]
+    return f"option {ids.index(option) + 1} of {len(ids)}"
+
+
+def option_shown(field: TaxonomyItem, option: str) -> str:
+    """The quoted label of an option, with its place where another one would be shown alike."""
+    shown = {o.id: quoted(o.label) for o in field.select_options or ()}
+    text = shown.get(option)
+    if text is None:
+        return quoted(option)
+    alike = [*shown.values()].count(text) > 1
+    return f"{text} ({_place(field, option)})" if alike else text
+
+
 def pick_option(
-    field: str, options: Sequence[SelectOption], word: str, matches: Sequence[SelectOption]
+    field: TaxonomyItem, word: str, matches: Sequence[SelectOption], *, role: str = ""
 ) -> SelectOption | Question:
     """The one match, or the one the user picked; else the question which of them is meant.
 
     Raises:
         Conflict: The user picked an option that does not match any more.
     """
-    places = {option.id: place for place, option in enumerate(options, start=1)}
-    choices = tuple(
-        Choice(o.id, f"{quoted(o.label)} (option {places[o.id]} of {len(options)})")
-        for o in matches
-    )
-    question = Question(f"options of {quoted(field)}", word, choices)
+    choices = tuple(Choice(o.id, quoted(o.label), detail=_place(field, o.id)) for o in matches)
+    what = f"options of {quoted(field.name)}"
+    question = Question(what, word, choices, role, about=str(field.id))
     if len(matches) == 1:
         if contradicts(question) is not None:
             message = f"The option the user picked does not match {word!r} any more."

@@ -10,9 +10,10 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from mcp_server_paperless.domain.choices import Choice, Question, picking
-from mcp_server_paperless.domain.errors import Ambiguous, Conflict, Validation
+from mcp_server_paperless.domain.errors import Ambiguous, Conflict, Validation, quoted
 from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyItem
 from mcp_server_paperless.services.custom_values import normalise
+from mcp_server_paperless.services.taxonomy import option_shown
 
 if TYPE_CHECKING:
     from pydantic import JsonValue
@@ -214,12 +215,12 @@ def test_an_ambiguous_label_asks_with_label_and_position() -> None:
 
     assert (question.what, question.word) == ("options of 'my-select'", "PAID")
     assert question.choices == (
-        Choice("o1", "'Paid' (option 1 of 4)"),
-        Choice("o2", "'paid' (option 2 of 4)"),
+        Choice("o1", "'Paid'", detail="option 1 of 4"),
+        Choice("o2", "'paid'", detail="option 2 of 4"),
     )
-    assert [c.title for c in asked("Open").choices] == [
-        "'Open' (option 3 of 4)",
-        "'Open' (option 4 of 4)",
+    assert [c.shown for c in asked("Open").choices] == [
+        "'Open', option 3 of 4",
+        "'Open', option 4 of 4",
     ]
 
 
@@ -233,7 +234,7 @@ def test_the_picked_option_is_stored_also_of_two_with_one_label(word: str, optio
 
 @pytest.mark.decision("decision-109")
 def test_a_pick_of_another_field_or_of_no_match_does_nothing() -> None:
-    other = DOUBLES.model_copy(update={"name": "other"})
+    other = DOUBLES.model_copy(update={"id": 2})
     for pick in (asked("Open", other).picking("o3"), asked("Open").picking("o1")):
         with picking([pick]), pytest.raises(Ambiguous):
             _ = normalise(DOUBLES, "Open")
@@ -246,3 +247,28 @@ def test_a_picked_option_that_is_gone_is_never_replaced_by_the_other_one() -> No
         with pytest.raises(Conflict, match="The option the user picked does not match 'Open' any"):
             _ = normalise(left, "Open")
         assert normalise(field("select", ("o4", "Open")), "Open") == "o4"
+
+
+@pytest.mark.decision("decision-109")
+def test_fields_whose_names_look_alike_when_cut_have_topics_of_their_own() -> None:
+    """A pick in one field is no contradiction in the other, which has one such option."""
+    one = DOUBLES.model_copy(update={"name": "x" * 59 + "a" * 20})
+    two = field("select", ("p1", "Open")).model_copy(update={"id": 2, "name": "x" * 59 + "b" * 20})
+
+    assert asked("Open", one).what == f"options of {quoted(two.name)}"
+    with picking([asked("Open", one).picking("o4")]):
+        assert normalise(one, "Open") == "o4"
+        assert normalise(two, "Open") == "p1"
+
+
+@pytest.mark.decision("decision-109")
+def test_an_option_that_moves_is_the_same_question() -> None:
+    more = field("select", *[(o.id, o.label) for o in DOUBLES.select_options or ()], ("o5", "New"))
+    with picking([asked("Open").picking("o4")]):
+        assert normalise(more, "Open") == "o4"
+
+
+def test_an_option_is_shown_with_its_place_where_another_has_its_label() -> None:
+    assert option_shown(DOUBLES, "o3") == "'Open' (option 3 of 4)"
+    assert option_shown(DOUBLES, "o1") == "'Paid'"
+    assert option_shown(DOUBLES, "gone") == "'gone'"

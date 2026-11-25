@@ -518,9 +518,10 @@ async def test_the_picked_of_two_options_with_one_label_is_renamed_or_removed(op
         _ = await setup.update("custom_field", "Double", options_rename={"Open": "Done"})
     question = raised.value.question
     assert question is not None
-    assert [(c.value, c.title) for c in question.choices] == [
-        ("one", "'Open' (option 1 of 3)"),
-        ("two", "'Open' (option 2 of 3)"),
+    assert question.role == "select options rename"
+    assert [(c.value, c.shown) for c in question.choices] == [
+        ("one", "'Open', option 1 of 3"),
+        ("two", "'Open', option 2 of 3"),
     ]
 
     with picking([question.picking(option)]):
@@ -538,14 +539,36 @@ async def test_a_pick_of_an_option_to_remove_is_no_confirmation() -> None:
     assert raised.value.question is not None
 
     with picking([raised.value.question.picking("two")]):
-        with pytest.raises(ConfirmationRequired):
+        with pytest.raises(ConfirmationRequired) as refused:
             _ = await setup.update("custom_field", "Double", options_remove=["Open"])
+        assert "remove the option(s) 'Open' (option 2 of 3) of 'Double'" in refused.value.message
         removed = await setup.update(
             "custom_field", "Double", options_remove=["Open"], confirm=True
         )
 
     assert removed.select_options is not None
     assert [o.id for o in removed.select_options] == ["one", "three"]
+
+
+@pytest.mark.decision("decision-109")
+async def test_two_renames_of_one_option_are_refused() -> None:
+    setup = Setup()
+    two_of_one_label(setup)
+    renames = {"Open": "Done", "two": "Closed"}
+    with pytest.raises(Ambiguous) as raised:
+        _ = await setup.update("custom_field", "Double", options_rename=renames)
+    assert raised.value.question is not None
+
+    with (
+        picking([raised.value.question.picking("two")]),
+        pytest.raises(Validation, match="An option is renamed twice"),
+    ):
+        _ = await setup.update("custom_field", "Double", options_rename=renames)
+    with pytest.raises(Validation, match="An option is renamed twice"):
+        _ = await setup.update("custom_field", "Double", options_rename={"Paid": "a", "three": "b"})
+    with picking([raised.value.question.picking("one")]):
+        done = await setup.update("custom_field", "Double", options_rename=renames)
+    assert [o.label for o in done.select_options or ()] == ["Done", "Closed", "Paid"]
 
 
 async def test_renaming_the_field_alone_leaves_its_options_alone() -> None:
