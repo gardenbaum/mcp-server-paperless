@@ -1356,3 +1356,20 @@ async def test_other_kinds_have_no_such_bound() -> None:
     )
 
     assert done.changed_count == 3
+
+
+@pytest.mark.decision("decision-87")
+async def test_the_objects_behind_a_refused_owner_are_said_to_be_unchanged() -> None:
+    setup = Setup()
+    with_mail(setup)
+    fake = Clashing(setup.state, user=ADMIN[0], writes=True)
+    service = PermissionService(fake, fake, setup.taxonomy, fake, web_url=WEB)
+    asked = PermissionsRequest(owner="e2e-reader", view_users=["e2e-blind"])
+
+    with pytest.raises(Validation) as raised:
+        _ = await service.set_permissions("mail_rule", [6, 7], asked, confirm=True)
+
+    assert raised.value.message.endswith(
+        "The grants of 'Bills' were set all the same; its owner was not changed. The objects after "
+        "it were not changed."
+    )
