@@ -113,6 +113,44 @@ def test_an_unknown_name_before_the_suffix_is_suggested_like_any_other() -> None
 
 
 @pytest.mark.decision("decision-97")
+@pytest.mark.parametrize(
+    "entry",
+    [
+        *("bulkro", "bulkr", "bulkread", "bulk-", "bulk_ro", "bulkk"),
+        *("mailro", "mailr", "pdfro", "workflowsro", "airo", "corer", "corero"),
+    ],
+)
+def test_what_starts_with_a_toolset_is_never_suggested_writable(entry: str) -> None:
+    known = frozenset(REAL_TOOLSETS.values())
+    [name] = [name for name in known if entry.startswith(name)]
+
+    with pytest.raises(InvalidConfiguration) as caught:
+        _ = selected_toolsets((entry,), known)
+
+    assert f" Did you mean {name}:read?" in caught.value.message
+    assert caught.value.message.count("Did you mean") == 1
+
+
+@pytest.mark.decision("decision-97")
+def test_a_plain_typo_is_suggested_as_the_name_and_beside_others_each_gets_its_own() -> None:
+    known = frozenset(REAL_TOOLSETS.values())
+
+    with pytest.raises(InvalidConfiguration, match=r"Did you mean mail\?"):
+        _ = selected_toolsets(("mial",), known)
+    with pytest.raises(InvalidConfiguration) as caught:
+        _ = selected_toolsets(("mial", "corero", "trsh:read"), known)
+
+    assert "Did you mean core:read, mail, trash:read?" in caught.value.message
+    with pytest.raises(InvalidConfiguration, match="Did you mean mail:read"):
+        _ = selected_toolsets(("mialread",), known)
+    with pytest.raises(InvalidConfiguration) as punctuated:
+        _ = selected_toolsets(("mial-",), known)
+    assert "Did you mean" not in punctuated.value.message  # not letters only: never the bare name
+    with pytest.raises(InvalidConfiguration, match="Did you mean corework:read"):
+        _ = selected_toolsets(("coreworkx",), frozenset({"core", "corework"}))
+
+
+@pytest.mark.decision("decision-97")
 def test_all_read_only_is_refused_and_names_the_setting_for_it() -> None:
     for entries in (("all:read",), ("all:read", "core"), ("all:read", "all")):
         with pytest.raises(InvalidConfiguration, match="PAPERLESS_MCP_READ_ONLY=true"):

@@ -87,9 +87,13 @@ async def test_a_mixed_selection_offers_tells_and_refuses_the_same(
                 for name, arguments in (
                     ("delete_mail_rule", {"rule_id": 1, "confirm": True}),
                     ("upload_documents", {}),
-                    ("bulk_download", {"document_ids": [1], "save_dir": str(tmp_path)}),
                 )
             ]
+            unsaved = await client.call_tool(
+                "bulk_download",
+                {"document_ids": [1], "save_dir": str(tmp_path)},
+                raise_on_error=False,
+            )
 
     assert seen.tools == {
         tool
@@ -111,5 +115,7 @@ async def test_a_mixed_selection_offers_tells_and_refuses_the_same(
     assert "triage_inbox" in prompts
     assert not read.is_error
     assert not written.is_error
-    assert all(result.is_error for result in hidden)
+    assert all(result.is_error and "Unknown tool" in str(result.content) for result in hidden)
+    assert unsaved.is_error  # the tool is there, the parameter is not
+    assert "save_dir" in str(unsaved.content)
     assert list(tmp_path.iterdir()) == []  # noqa: ASYNC240 -- a test looking at its directory

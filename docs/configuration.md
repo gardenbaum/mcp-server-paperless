@@ -95,6 +95,10 @@ PAPERLESS_MCP_TOOLSETS=core,ai,mail:read,workflows:read
   download tool only attaches. The other one still saves.
 - `run_saved_view` belongs to `core`, so `views:read` does not touch it. Prompts that need a writing tool of a
   read-only toolset are not offered.
+- The other selected toolsets keep their writing tools, also for the same objects: with
+  `mail:read,permissions` the assistant can still share mail accounts and rules or hand them over, with
+  `core:read,bulk` it can still change documents. Select every toolset that writes them read-only, too.
+- Descriptions of tools that are offered may still name a tool that is not; it cannot be called.
 - `PAPERLESS_MCP_READ_ONLY=true` wins: then everything is read-only. `all` stands alone: list every
   toolset to make some of them read-only, and use `PAPERLESS_MCP_READ_ONLY` instead of `all:read`.
   Another suffix, or a toolset both with and without it, stops the server.

@@ -14,7 +14,7 @@ from mcp_server_paperless.domain.toolsets import ALL_TOOLSETS as ALL
 from mcp_server_paperless.domain.toolsets import READ_SUFFIX
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Mapping
+    from collections.abc import Collection, Iterable, Mapping
 
     from mcp.types import ToolAnnotations
 
@@ -39,14 +39,27 @@ READ_ONLY_MARK = " (read-only)"
 CAPABILITY_LABELS = {"ai": "Paperless AI"}
 
 
-def _suggestions(unknown: Collection[str], known: Collection[str]) -> str:
-    """' Did you mean x?' for the unknown names that have a close known name."""
-    matches = [
-        match[0]
-        for name in sorted(unknown)
-        if (match := difflib.get_close_matches(name, known, n=1))
-    ]
-    return f" Did you mean {', '.join(matches)}?" if matches else ""
+def _closest(name: str, known: Collection[str]) -> str | None:
+    """The close known name of an unknown one."""
+    return next(iter(difflib.get_close_matches(name, known, n=1)), None)
+
+
+def _closest_entry(entry: str, known: Collection[str]) -> str | None:
+    """The entry an unknown one may mean; never writable where a suffix may have been meant.
+
+    What starts with a toolset's name means its reading, and so does what is not only letters.
+    """
+    started = [name for name in known if entry.startswith(name)]
+    if started:
+        return f"{max(started, key=len)}{READ_SUFFIX}"
+    reading = [f"{name}{READ_SUFFIX}" for name in known]
+    return _closest(entry, [*known, *reading] if entry.isalpha() else reading)
+
+
+def _did_you_mean(matches: Iterable[str | None]) -> str:
+    """' Did you mean x?' for the names found."""
+    found = ", ".join(dict.fromkeys(filter(None, matches)))
+    return f" Did you mean {found}?" if found else ""
 
 
 def selected_toolsets(names: Collection[str], known: Collection[str]) -> frozenset[str]:
@@ -67,12 +80,9 @@ def selected_toolsets(names: Collection[str], known: Collection[str]) -> frozens
     reading = {f"{name}{READ_SUFFIX}" for name in known}
     unknown = sorted(set(names) - set(known) - reading)
     if unknown:
-        # What was written with some suffix is never suggested without one: that is writable.
-        suffixed = {name for name in unknown if not name.isalpha()}
         message = (
             f"Unknown toolset in PAPERLESS_MCP_TOOLSETS: {', '.join(unknown)}."
-            f"{_suggestions(suffixed, reading)}"
-            f"{_suggestions(set(unknown) - suffixed, reading | set(known))}"
+            f"{_did_you_mean(_closest_entry(entry, known) for entry in unknown)}"
             f" Known toolsets: {', '.join(sorted(known))}, or {ALL}; "
             f"name{READ_SUFFIX} offers only the tools of a toolset that change nothing."
         )
@@ -109,7 +119,7 @@ def hidden_tools(
     if unknown:
         message = (
             f"Unknown tool in PAPERLESS_MCP_DISABLED_TOOLS: {', '.join(unknown)}."
-            f"{_suggestions(unknown, annotations)}"
+            f"{_did_you_mean(_closest(name, annotations) for name in unknown)}"
             f" Known tools: {', '.join(sorted(annotations))}."
         )
         raise InvalidConfiguration(message)
