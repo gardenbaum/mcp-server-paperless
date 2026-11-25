@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T10:18:28Z'
-updated_date: '2026-11-25T11:28:49Z'
+updated_date: '2026-11-25T11:41:56Z'
 labels:
   - views
 dependencies:
@@ -56,4 +56,6 @@ Fake: a change grant now lets its holder change the view, as in Paperless.
 Deliberate: five tests compare get_saved_view without its new field access.
 
 Review: get_saved_view shows access null where reading it fails with anything but a refusal; an unseen view points to list_saved_views; the confirmation says what a change grant on a view gives (the note was asked for by the main agent, the owner's answer is open; not written into decision-91, which belongs to #164). Views are read one by one and a call stops after the 40 s of PLMCP-81.5. Tests first (7 red); 4 mutants, none survives.
+
+The note of a change grant is decision-96 (proposed, the owner is asked); the number was given by the CLI in a copy of backlog/ outside the repository, because 93 to 95 are taken elsewhere. Full hosted E2E: 45600303375 on 9d33f6f green; 45606044346 on 8629d91 (after it only backlog files, a test marker and the merge of #164).
 <!-- SECTION:NOTES:END -->
