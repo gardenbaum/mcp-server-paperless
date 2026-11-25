@@ -148,7 +148,8 @@ async def test_every_filter_keeps_what_matches_and_leaves_out_the_rest(backend: 
         (TaskFilters(created_to=success.created), {good}, {bad, check}),
         (TaskFilters(name=cast("str", success.file_name)), {good}, {bad, check}),
         (TaskFilters(result=failure.message[:20]), {bad}, {good, check}),
-        (TaskFilters(result=str(success.document_ids[0])), {good}, {bad, check}),
+        # The digits can be part of the other error, which names a random file.
+        (TaskFilters(result=str(success.document_ids[0])), {good}, {check}),
         (TaskFilters(states=("failure",), trigger_sources=("manual",)), set(), {good, bad, check}),
     ]
     for filters, kept, left_out in cases:
