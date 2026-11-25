@@ -739,6 +739,18 @@ async def test_the_answer_to_a_failed_login_is_in_no_result_and_no_log(
 
 
 SENT = "wr0ng-Passw0rd-0815"
+TOKEN = {"is_token": True, "account_type": 2, "expiration": "2099-01-01T00:00:00Z"}
+
+
+def credentials(box: Mailbox, password: str) -> dict[str, str]:
+    """What Paperless sends for each kind of login, as a server can repeat it."""
+    plain = f"\0{box.name}\0{password}"
+    xoauth2 = f"user={box.name}\1auth=Bearer {password}\1\1"
+    return {
+        "login": f'"{box.name}" "{password}"',
+        "plain": base64.b64encode(plain.encode()).decode(),
+        "xoauth2": base64.b64encode(xoauth2.encode()).decode(),
+    }
 
 
 @pytest.mark.parametrize("how", ["no", "bye", "logout"])
@@ -749,24 +761,20 @@ async def test_a_server_that_repeats_the_credentials_leaks_none(
     """LOGIN for an ASCII password, AUTHENTICATE PLAIN for another one, XOAUTH2 for a token."""
     _ = box.rule()
     password = f"{SENT}ü" if login == "plain" else SENT
-    token = {"is_token": True, "account_type": 2, "expiration": "2099-01-01T00:00:00Z"}
-    forms = [
-        SENT,
-        base64.b64encode(f"\0{box.name}\0{password}".encode()).decode(),
-        base64.b64encode(f"user={box.name}\1auth=Bearer {password}\1\1".encode()).decode(),
-    ]
+    sent = credentials(box, password)
+    forms = [SENT, *sent.values()]
     raw: dict[str, list[str]] = {}
     with echo_server(how) as port:
         box.change_account(
             imap_server=ECHO,
             imap_port=port,
             password=password,
-            **(token if login == "xoauth2" else {}),
+            **(TOKEN if login == "xoauth2" else {}),
         )
         assert box.fetch() == 0
         raw = {name: box.log(name) for name in ("mail", "paperless")}
     written = "\n".join("\n".join(lines[-60:]) for lines in raw.values())
-    assert any(form in written for form in forms), "the server's answer is not in the logs"
+    assert sent[login] in written, "the server's answer is not in the logs"
 
     for name in raw:
         shown = await call(client, "get_log", name=name, lines=1000)
@@ -784,18 +792,25 @@ async def test_a_server_that_repeats_the_credentials_leaks_none(
 
 @pytest.mark.decision("decision-106")
 @pytest.mark.parametrize("how", ["dated", "record"])
-@pytest.mark.parametrize("login", ["login", "plain"])
+@pytest.mark.parametrize("login", ["login", "plain", "xoauth2"])
 async def test_a_server_that_forges_the_start_of_a_log_record(
     box: Mailbox, client: Connected, how: How, login: str
 ) -> None:
-    """A part of a start hides nothing from the redaction; a whole one is the known residual."""
+    """A part of a start hides nothing from the redaction; a whole one is the known residual.
+
+    The server sends a BYE to LOGIN, and a NO to AUTHENTICATE.
+    """
     _ = box.rule()
     # Of its own: what the last case shows must not be taken for that of another test.
     password = f"f0rged-{box.name}{'ü' if login == 'plain' else ''}"
-    plain = base64.b64encode(f"\0{box.name}\0{password}".encode()).decode()
-    secret = plain if login == "plain" else password
+    secret = password if login == "login" else credentials(box, password)[login]
     with echo_server(how) as port:
-        box.change_account(imap_server=ECHO, imap_port=port, password=password)
+        box.change_account(
+            imap_server=ECHO,
+            imap_port=port,
+            password=password,
+            **(TOKEN if login == "xoauth2" else {}),
+        )
         assert box.fetch() == 0
     forged = [line for line in box.log("mail") if line.startswith(FORGED[how]) and secret in line]
     assert forged, "the carriage return no longer makes a line of its own"

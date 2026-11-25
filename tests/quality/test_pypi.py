@@ -146,6 +146,20 @@ def test_every_action_in_the_pypi_workflow_is_pinned_to_a_commit() -> None:
         ), f"{ref}: needs a version comment"
 
 
+def assert_the_live_suite_gate(gate: dict[str, object]) -> None:
+    """The job fails unless a run of e2e-full.yml has passed on the tagged commit."""
+    [check] = [mapping(step) for step in sequence(gate["steps"])]
+    assert gate["if"] == TAG_GATE
+    assert gate["permissions"] == {"actions": "read"}
+    assert "if" not in check
+    assert mapping(check["env"])["TAGGED_SHA"] == "${{ github.sha }}"
+    run = str(check["run"])
+    assert '--workflow e2e-full.yml --commit "$TAGGED_SHA"' in run
+    assert 'select(.conclusion == "success")' in run
+    assert '"$passed" -lt 1' in run
+    assert "exit 1" in run
+
+
 def test_only_v_tags_publish_and_pull_requests_only_build() -> None:
     trigger = mapping(workflow()["on"])
     pull_request = mapping(trigger["pull_request"])
@@ -162,14 +176,19 @@ def test_only_v_tags_publish_and_pull_requests_only_build() -> None:
 def test_only_the_tag_gated_publish_job_gets_an_oidc_token_in_the_pypi_environment() -> None:
     flow = workflow()
 
-    assert set(jobs()) == {"build", "publish"}
+    assert set(jobs()) == {"build", "e2e", "publish"}
     assert flow["permissions"] == {"contents": "read"}
     assert "permissions" not in job("build")  # inherits contents: read
     assert job("publish")["permissions"] == {"contents": "read", "id-token": "write"}
-    assert job("publish")["needs"] == "build"
+    assert job("publish")["needs"] == ["build", "e2e"]
     assert job("publish")["if"] == TAG_GATE
     assert mapping(job("publish")["environment"])["name"] == "pypi"
     assert yaml.safe_dump(flow).count("id-token") == 1
+
+
+@pytest.mark.decision("decision-112")
+def test_a_tag_publishes_only_what_the_whole_live_suite_has_passed_on() -> None:
+    assert_the_live_suite_gate(job("e2e"))
 
 
 def test_no_check_can_be_skipped_or_soft_failed_and_no_expression_reaches_a_script() -> None:
