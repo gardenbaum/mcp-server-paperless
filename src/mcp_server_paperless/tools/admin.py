@@ -198,18 +198,21 @@ async def update_user(  # noqa: PLR0913 -- one parameter per field, described fo
     ] = None,
     groups: Groups = None,
     permissions: Permissions = None,
+    remove_second_factor: Annotated[
+        bool, Field(description="true removes the user's TOTP; in a call of its own.")
+    ] = False,
     confirm: Confirm = False,
 ) -> UserOutcome:
     """Change a user; only what you pass changes and the saved password stays.
 
     Anything that gives or takes away access or can take the account over needs confirm: a new
     e-mail address (it resets the password), a rename, superuser or staff status, deactivating or
-    reactivating, a new password, groups, permissions. Without it a dialog, or an error for you to
-    show the user, first names who is affected (see confirm). First and last name need none, nor
-    does clearing the e-mail address. Lists replace the user's lists. The account this server signs
-    in with cannot be deactivated or stripped of superuser status. A call that changes nothing says
-    so. Only a superuser may change a superuser or the superuser and staff status of anyone;
-    otherwise the change_user permission is enough.
+    reactivating, a new password, groups, permissions, removing the second factor. Without it a
+    dialog, or an error for you to show the user, first names who is affected (see confirm). First
+    and last name need none, nor does clearing the e-mail address. Lists replace the user's lists.
+    The account this server signs in with cannot be deactivated or stripped of superuser status or
+    its second factor. A call that changes nothing says so. Only a superuser may change a superuser
+    or the superuser and staff status of anyone; otherwise the change_user permission is enough.
     """
     return await services(ctx).accounts.update_user(
         user,
@@ -223,6 +226,7 @@ async def update_user(  # noqa: PLR0913 -- one parameter per field, described fo
         is_superuser=is_superuser,
         groups=groups,
         permissions=permissions,
+        remove_second_factor=remove_second_factor,
         confirm=confirm,
     )
 

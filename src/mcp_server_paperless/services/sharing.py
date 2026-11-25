@@ -36,7 +36,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
     from mcp_server_paperless.domain.ports import DocumentReader, SharingReader, SharingWriter
-    from mcp_server_paperless.domain.sharing import FileVersionKind, ShareBundle, ShareLink
+    from mcp_server_paperless.domain.sharing import (
+        BundleStatus,
+        FileVersionKind,
+        ShareBundle,
+        ShareLink,
+    )
 
 # Longest expiry: ten years, which keeps the date arithmetic far from its limits.
 MAX_DAYS: Final = 3650
@@ -277,14 +282,21 @@ class SharingService:
         message = f"{subject[0].upper()}{subject[1:]} was deleted; its URL no longer works."
         return ShareDeletion(id=link_id, message=message)
 
-    async def list_bundles(self, *, page: int, page_size: int) -> ShareBundleListing:
-        """One page of the bundles with their build state.
+    async def list_bundles(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        status: BundleStatus | None = None,
+        document_id: int | None = None,
+    ) -> ShareBundleListing:
+        """One page of the bundles with their build state, with ``status`` or of a document.
 
         Raises:
             NotFound: ``page`` is beyond the last page.
             PermissionDenied: The user may not view bundles.
         """
-        bundles = await self._reader.list_share_bundles()
+        bundles = await self._reader.list_share_bundles(status=status, document_id=document_id)
         shown, following = _page(bundles, page, page_size)
         return ShareBundleListing(
             count=len(bundles),

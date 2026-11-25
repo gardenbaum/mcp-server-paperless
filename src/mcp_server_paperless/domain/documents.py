@@ -61,6 +61,7 @@ class DocumentQuery(BaseModel):
     title_search: str | None = None
     title_contains: str | None = None
     content_contains: str | None = None
+    file_name_contains: str | None = None
     correspondent: int | None = None
     correspondent_isnull: bool | None = None
     correspondent_in: tuple[int, ...] = ()
@@ -78,6 +79,8 @@ class DocumentQuery(BaseModel):
     tags_none: tuple[int, ...] = ()
     tagged: bool | None = None
     archive_serial_number: int | None = None
+    asn_from: int | None = None
+    asn_to: int | None = None
     asn_gt: int | None = None
     asn_lt: int | None = None
     asn_isnull: bool | None = None
@@ -92,6 +95,8 @@ class DocumentQuery(BaseModel):
     added_to: date | None = None
     added_gt: date | None = None
     added_lt: date | None = None
+    modified_from: date | None = None
+    modified_to: date | None = None
     modified_gt: date | None = None
     modified_lt: date | None = None
     owner: int | None = None
@@ -333,6 +338,10 @@ class DocumentSearchResult(BaseModel):
     ] = ()
 
 
+# How Paperless shows the text of a note.
+type NoteFormat = Literal["plain", "markdown"]
+
+
 class Note(BaseModel):
     """A note on a document."""
 
@@ -340,6 +349,7 @@ class Note(BaseModel):
 
     id: int
     note: str
+    format: Annotated[str | None, Field(description="plain or markdown.")] = None
     created: datetime | None
     user: Annotated[str | None, Field(description="Username of the author, if known.")]
 

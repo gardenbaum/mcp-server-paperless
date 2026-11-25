@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Concatenate, Literal, cast
 
 from pydantic import JsonValue
 
-from fakes import mail, raw, sharing, workflow_runs, workflows
+from fakes import lookups, mail, raw, sharing, workflow_runs, workflows
 from fakes.accounts import (
     ADMIN,
     BLIND,
@@ -102,6 +102,7 @@ from mcp_server_paperless.domain.documents import (
     FileMetadata,
     HistoryEntry,
     Note,
+    NoteFormat,
     SignedIn,
     Suggestions,
 )
@@ -116,6 +117,8 @@ from mcp_server_paperless.domain.errors import (
 )
 from mcp_server_paperless.domain.files import OpenedFile, missing_file, missing_files
 from mcp_server_paperless.domain.instance import (
+    NOT_READ,
+    SWITCHED_OFF,
     ComponentStatus,
     CurrentUser,
     DatabaseStatus,
@@ -129,6 +132,7 @@ from mcp_server_paperless.domain.instance import (
     SystemStatus,
     TaskTotals,
     TimedStatus,
+    UpdateCheck,
 )
 from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, RotationSearch, StartedTasks
 from mcp_server_paperless.domain.permissions import (
@@ -176,6 +180,7 @@ from mcp_server_paperless.paperless.admin import (
     DOWNLOAD,
     READ_CONFIG,
     READ_LOGS,
+    REMOVE_FACTOR,
     VIEW_GROUP,
     VIEW_USER,
     denied,
@@ -250,8 +255,13 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.pdf import FileOutput, PageSlot
     from mcp_server_paperless.domain.permissions import AccessChange, PermissionKind
     from mcp_server_paperless.domain.raw import RawReply
-    from mcp_server_paperless.domain.selection import ReadField
-    from mcp_server_paperless.domain.sharing import FileVersionKind, ShareBundle, ShareLink
+    from mcp_server_paperless.domain.selection import CountedKind, ReadField
+    from mcp_server_paperless.domain.sharing import (
+        BundleStatus,
+        FileVersionKind,
+        ShareBundle,
+        ShareLink,
+    )
     from mcp_server_paperless.domain.task_lists import RunnableTask, TaskFilters, TaskOrdering
     from mcp_server_paperless.domain.taxonomy import (
         MatchingAlgorithm,
@@ -318,6 +328,8 @@ class FakeUser:
     # Whether the user has a password; the fake keeps no password, so it cannot sign in.
     has_password: bool = False
     date_joined: datetime = datetime(2026, 11, 11, 19, 0, tzinfo=UTC)
+    # Whether the user has a second factor (TOTP).
+    mfa: bool = False
 
     def has(self, permission: str) -> bool:
         """Django's `has_perm`: superusers have every permission."""
@@ -642,6 +654,9 @@ def task_matches(task: FakeTask, filters: TaskFilters) -> bool:
 class FakeState:
     """The data of one fake Paperless instance, shared by every `FakePaperless` on it."""
 
+    # PAPERLESS_ENABLE_UPDATE_CHECK, off as in the E2E stack.
+    update_check: bool = False
+
     users: list[FakeUser] = field(default_factory=list[FakeUser])
     documents: list[FakeDocument] = field(default_factory=list[FakeDocument])
     # The files Paperless cannot find, by version id, and the versions without file names.
@@ -833,6 +848,7 @@ def seeded() -> FakeState:
                     Note(
                         id=1,
                         note=PUBLIC_NOTE,
+                        format="plain",
                         created=datetime(2026, 11, 11, 20, 0, tzinfo=UTC),
                         user="admin",
                     )
@@ -935,7 +951,12 @@ class FakePaperless:
                 else None
             ),
             ai_enabled=self.state.ai_enabled if may_view_settings else None,
+            next_asn=self._next_number() if user.has("view_document") else None,
         )
+
+    def _next_number(self) -> int:
+        """`next_asn`: over every document, hidden ones too, but not those in the trash."""
+        return max((d.archive_serial_number or 0 for d in self.state.documents), default=0) + 1
 
     async def get_system_report(self) -> SystemReport:
         """`SystemReportReader.get_system_report` (StatisticsView, SystemStatusView)."""
@@ -962,6 +983,14 @@ class FakePaperless:
             ),
             status=self._status_report() if self._task_viewer().summary_of_all else None,
         )
+
+    async def check_for_update(self) -> UpdateCheck:
+        """`SystemReportReader.check_for_update` (UiSettingsView, RemoteVersionView)."""
+        if not self.user.has("view_uisettings"):
+            return UpdateCheck.unknown(NOT_READ)
+        if not self.state.update_check:
+            return UpdateCheck.unknown(SWITCHED_OFF)
+        return UpdateCheck(newest_release=f"v{VERSION}", update_available=False, note=None)
 
     def _status_report(self) -> StatusReport:
         health = self.state.system_status
@@ -1032,6 +1061,79 @@ class FakePaperless:
             raise PermissionDenied(message)
         rows = self._rows(kind)
         return sorted(rows, key=lambda row: (row.name.lower(), row.id))
+
+    async def get_storage_path_template(self, item_id: int) -> str:
+        """`TaxonomyReader.get_storage_path_template` (the retrieve view)."""
+        self._require("view_storagepath")
+        for path in self.state.storage_paths:
+            if path.id == item_id and path.visible_to(self.user):
+                return path.path
+        message = f"No storage path {item_id} exists, or the user may not see it."
+        raise NotFound(message)
+
+    async def render_storage_path(self, document_id: int, template: str) -> str | None:
+        """`TaxonomyReader.render_storage_path` (the `test` action)."""
+        self._require("view_document")
+        found = [d for d in self.state.documents if d.id == document_id]
+        if not found or not found[0].visible_to(self.user):
+            reject("document", f'Invalid pk "{document_id}" - object does not exist.')
+        if not template.strip():
+            reject("path", "This field may not be blank.")
+        names = {c.id: c.name for c in self.state.correspondents}
+        values = {
+            "title": found[0].title,
+            "created_year": f"{found[0].created.year}",
+            "correspondent": names.get(found[0].correspondent or 0, "none"),
+            "tag_list": ",".join(sorted(t.name for t in self.state.tags if t.id in found[0].tags)),
+            "''": "",
+        }
+        return lookups.rendered(template, values)
+
+    async def count_selection(
+        self, document_ids: Sequence[int]
+    ) -> dict[CountedKind, dict[int, int]]:
+        """`DocumentReader.count_selection` (SelectionDataView).
+
+        The ids must exist and be named once (400), and all be visible (403); what the documents
+        have is counted whether the user may see it or not.
+        """
+        self._require("view_document")
+        chosen = [d for d in self.state.documents if d.id in document_ids]
+        if len(chosen) != len(document_ids):
+            reject("documents", "Some documents in documents don't exist or were specified twice.")
+        if not all(d.visible_to(self.user) for d in chosen):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
+
+        def counted(ids: Iterable[int | None]) -> dict[int, int]:
+            return dict(Counter(number for number in ids if number is not None))
+
+        return {
+            "tag": counted(number for d in chosen for number in d.tags),
+            "correspondent": counted(d.correspondent for d in chosen),
+            "document_type": counted(d.document_type for d in chosen),
+            "storage_path": counted(d.storage_path for d in chosen),
+            "custom_field": counted(number for d in chosen for number in d.custom_fields),
+        }
+
+    async def suggest_words(self, term: str, limit: int) -> tuple[str, ...]:
+        """`DocumentReader.suggest_words` (SearchAutoCompleteView)."""
+        self._require("view_document")
+        state = self.state
+
+        def text(document: FakeDocument) -> str:
+            names = [t.name for t in state.tags if t.id in document.tags]
+            names += [c.name for c in state.correspondents if c.id == document.correspondent]
+            names += [t.name for t in state.document_types if t.id == document.document_type]
+            return " ".join([document.title, document.content, *names])
+
+        visible = [d for d in state.documents if d.visible_to(self.user)]
+        return lookups.suggested(map(text, visible), term, limit)
+
+    def _require(self, permission: str) -> None:
+        if not self.user.has(permission):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
 
     def _rows(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
         state, user = self.state, self.user
@@ -1620,7 +1722,9 @@ class FakePaperless:
         return TaxonomyItem(id=tag.id, name=tag.name, document_count=0, colour=tag.colour)
 
     @write
-    async def add_note(self, document_id: int, text: str) -> Note:
+    async def add_note(
+        self, document_id: int, text: str, note_format: NoteFormat = "plain"
+    ) -> Note:
         """`DocumentWriter.add_note` (the `notes` action, POST).
 
         Order in Paperless 3.4.2: the global `view_document`, `add_note` and `change_document`
@@ -1642,6 +1746,7 @@ class FakePaperless:
         note = Note(
             id=state.last_note_id,
             note=text.strip(),
+            format=note_format,
             created=datetime.now(UTC),
             user=self.user.username,
         )
@@ -3552,9 +3657,16 @@ class FakePaperless:
         """`SharingReader.get_share_link`."""
         return sharing.get_link(self._sharing(), self._viewer(), link_id)
 
-    async def list_share_bundles(self) -> tuple[ShareBundle, ...]:
+    async def list_share_bundles(
+        self, *, status: BundleStatus | None = None, document_id: int | None = None
+    ) -> tuple[ShareBundle, ...]:
         """`SharingReader.list_share_bundles`."""
-        return sharing.list_bundles(self._sharing(), self._viewer())
+        return tuple(
+            bundle
+            for bundle in sharing.list_bundles(self._sharing(), self._viewer())
+            if status in {None, bundle.status}
+            and (document_id is None or document_id in bundle.document_ids)
+        )
 
     async def get_email_enabled(self) -> bool | None:
         """`SharingReader.get_email_enabled` (UiSettingsView; 403 without `view_uisettings`)."""
@@ -3885,7 +3997,7 @@ class FakePaperless:
             permissions=tuple(sorted(user.permissions)),
             inherited_permissions=tuple(sorted(inherited)),
             date_joined=user.date_joined,
-            mfa_enabled=False,
+            mfa_enabled=user.mfa,
         )
 
     async def get_user(self, user_id: int) -> UserRecord:
@@ -4187,6 +4299,17 @@ class FakePaperless:
                 raise denied(CHANGE_USER)
         return self._user_record(self._apply_user(target, values))
 
+    @write
+    async def remove_second_factor(self, user_id: int) -> None:
+        """`AdminWriter.remove_second_factor` (`deactivate_totp`: superusers only)."""
+        if not self.user.is_superuser:
+            raise denied(REMOVE_FACTOR)
+        if not self._find_user(user_id).mfa:
+            message = f"User {user_id} has no second factor."
+            raise NotFound(message)
+        users = self.state.users
+        users[:] = [replace(u, mfa=False) if u.id == user_id else u for u in users]
+
     def _forget(self, *, user: int | None = None, group: int | None = None) -> None:
         """Take a deleted user or group out of owners and grants, like Paperless."""
         state = self.state
@@ -4418,7 +4541,9 @@ class FakePaperless:
             ),
         )
 
-    async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
+    async def get_document_thumbnail(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> DocumentFile:
         """`DocumentReader.get_document_thumbnail` (the `thumb` action: WebP, numbered name).
 
         It finds documents and versions in the trash, too (`include_deleted`); what is missing of
@@ -4427,13 +4552,19 @@ class FakePaperless:
         document = self._sub(document_id, trashed=True)
         trashed = any(d is document for d in self.state.trash)
         shown = document.id if trashed else document.versions[0].id
+        if version_id is not None:
+            if version_id not in {v.id for v in document.versions}:
+                raise unseen_version(document_id, version_id)
+            shown = version_id
         if (shown, "thumbnail") in self.state.missing:
             if trashed:
                 raise unseen_document(document_id)
-            message = f"Paperless cannot find the thumbnail of document {document_id}."
+            version = "" if version_id is None else f"version {version_id} of "
+            message = f"Paperless cannot find the thumbnail of {version}document {document_id}."
             raise NotFound(message, hint=NO_THUMBNAIL_HINT)
         return DocumentFile(
-            content=document.thumbnail,
+            # The image of a later version differs from that of the first one.
+            content=document.thumbnail + (b"" if shown == document.id else f"{shown}".encode()),
             mime_type="image/webp",
             filename=f"{document.id:07d}.webp",
         )
@@ -4633,6 +4764,32 @@ def _filters(query: DocumentQuery, state: FakeState) -> list[_Match]:
             lambda d: query.added_from is None or d.added.date() >= query.added_from,
         ),
         (query.added_to, lambda d: query.added_to is None or d.added.date() <= query.added_to),
+        (
+            query.modified_from,
+            lambda d: query.modified_from is None or d.modified.date() >= query.modified_from,
+        ),
+        (
+            query.modified_to,
+            lambda d: query.modified_to is None or d.modified.date() <= query.modified_to,
+        ),
+        (
+            query.asn_from,
+            lambda d: (
+                d.archive_serial_number is not None
+                and d.archive_serial_number >= (query.asn_from or 0)
+            ),
+        ),
+        (
+            query.asn_to,
+            lambda d: (
+                d.archive_serial_number is not None
+                and d.archive_serial_number <= (query.asn_to or 0)
+            ),
+        ),
+        (
+            query.file_name_contains,
+            lambda d: (query.file_name_contains or "").lower() in (d.file_name or "").lower(),
+        ),
         (query.owner, lambda d: d.owner == query.owner),
         (query.inbox, lambda d: bool(inbox & set(d.tags)) == query.inbox),
         (query.ids, lambda d: d.id in query.ids),

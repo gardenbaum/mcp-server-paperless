@@ -7,6 +7,7 @@ import pytest
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
+from e2e.helpers import obj, parse
 from mcp_server_paperless.server import create_server
 from mcp_server_paperless.services.search_syntax import query_notices
 
@@ -96,6 +97,22 @@ async def test_date_ranges_on_live_paperless(stack: Stack) -> None:
 
     assert "e2e-public-invoice" in await titles(stack, created_from=str(created))
     assert "e2e-public-invoice" not in await titles(stack, created_to=str(created - day))
+
+
+async def test_the_change_the_serial_number_and_the_file_name_on_live_paperless(
+    stack: Stack,
+) -> None:
+    mine = "e2e-public-invoice"
+    path = f"/api/documents/{stack.seeded.public_document}/"
+    day = str(obj(parse(stack.admin.get(path)))["modified"])[:10]
+
+    assert mine in await titles(stack, modified_from=day, modified_to=day)
+    assert mine not in await titles(
+        stack, modified_to=str(date.fromisoformat(day) - timedelta(days=1))
+    )
+    assert await titles(stack, title_contains="e2e-p", asn_from=2, asn_to=2) == {mine}
+    assert mine in await titles(stack, file_name_contains="E2E-public")
+    assert await titles(stack, query="acme", asn_to=2) == {mine}
 
 
 async def test_full_text_rows_are_readable_and_hold_no_content(stack: Stack) -> None:
