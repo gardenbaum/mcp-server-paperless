@@ -222,7 +222,7 @@ e2e-up:
 e2e: e2e-up
     uv run pytest -m e2e --no-cov --durations=20
 
-# Run the live tests under the given pytest paths (CI's fast tier on a pull request: the paths come
+# Run the live tests under the given pytest paths (a tier picked by hand: the paths come
 # from `scripts/e2e_ci.py scope`), e.g. `just e2e-paths tests/e2e/test_stdio.py tests/contract/test_pdf.py`.
 e2e-paths *paths: e2e-up
     uv run pytest -m e2e --no-cov --durations=20 {{paths}}

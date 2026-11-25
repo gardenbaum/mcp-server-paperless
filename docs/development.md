@@ -37,7 +37,7 @@ or lint rule that holds it.
 |---|---|
 | Unit, adapter and tool tests | Services against fakes, the adapter against the vendored Paperless OpenAPI schema, every tool through an in-process MCP client |
 | Contract suite | The same tests run against `FakePaperless` and against a real Paperless, so the fake cannot drift from the real thing; the fake models 3.5.1 |
-| Live end-to-end tests | The server against a real paperless-ngx in Docker: the touched toolsets on every pull request, the whole suite after every merge and nightly |
+| Live end-to-end tests | The server against a real paperless-ngx in Docker: the whole suite before every release |
 | Surface snapshot | Tool names, schemas, descriptions and annotations as clients see them; a change is reviewed |
 | Mutation testing | mutmut on `services/` and `paperless/` with an 80 % gate, weekly |
 | Latest release and drift | The live suite against the latest paperless-ngx 3.x, and the vendored schema against the latest release, weekly |
