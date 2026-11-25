@@ -287,6 +287,7 @@ CET = timezone(timedelta(hours=1))
         (TaskFilters(is_complete=True), [("is_complete", "true")]),
         (TaskFilters(is_complete=False), [("is_complete", "false")]),
         (TaskFilters(owner=7), [("owner", "7")]),
+        (TaskFilters(owner=0), [("owner", "0")]),
         (TaskFilters(name="a b&c+d"), [("name", "a b&c+d")]),
         (TaskFilters(result="50%"), [("result", "50%")]),
         (

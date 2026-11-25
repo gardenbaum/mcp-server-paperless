@@ -87,13 +87,13 @@ async def test_every_filter_is_an_argument_and_one_value_or_a_list_works() -> No
     state.tasks = [
         FakeTask(id=1, task_id="u1", created=at, status="failure", file_name="a.pdf", owner=2),
         FakeTask(id=2, task_id="u2", created=at, status="revoked", task_type="mail_fetch"),
-        FakeTask(id=3, task_id="u3", created=at, status="success"),
+        FakeTask(id=3, task_id="u3", created=at, status="success", trigger_source="manual"),
     ]
     for arguments, ids in (
         ({"state": "failure"}, [1]),
         ({"state": ["failure", "revoked"]}, [2, 1]),
         ({"task_type": ["mail_fetch"]}, [2]),
-        ({"trigger_source": ["api_upload"], "is_complete": True}, [3, 2, 1]),
+        ({"trigger_source": ["api_upload"], "is_complete": True}, [2, 1]),
         ({"owner": "admin"}, [1]),
         ({"name": "A.PDF"}, [1]),
         ({"created_from": "2026-11-17T09:00:00+01:00"}, [3, 2, 1]),
