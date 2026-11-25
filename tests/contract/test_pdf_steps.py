@@ -38,6 +38,7 @@ from mcp_server_paperless.services.pdf_replacing import Replacing
 from mcp_server_paperless.services.removal import DocumentRemoval
 from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.trash_scan import TrashScan
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -104,7 +105,8 @@ def operations(
     taxonomy = TaxonomyResolver(ports.taxonomy, StaticTokenProvider("t"), ttl=3600.0)
     documents = DocumentService(reader, ports.trash, taxonomy, web_url=WEB)
     editor = DocumentEditor(reader, writes, ports.taxonomy_writes, taxonomy, documents=documents)
-    replacing = Replacing(reader, writes, DocumentRemoval(reader, writes, taxonomy))
+    scan = TrashScan(ports.trash, reader, taxonomy)
+    replacing = Replacing(reader, writes, DocumentRemoval(reader, writes, taxonomy), scan)
     return PdfService(
         reader,
         pdf,
@@ -347,6 +349,50 @@ async def test_an_original_that_may_not_be_trashed_stays_beside_its_parts(
     assert f"Not moved to the trash: document {source}" in (result.message or "")
     assert f"delete_document(document_id={source})" in (result.next or "")
     assert not backend.in_trash(source)
+
+
+async def replaced_while(
+    backend: Backend, happens: Callable[[int], Awaitable[None]]
+) -> tuple[int, PdfResult]:
+    """Split a document nobody owns, with something else just before its deletion."""
+    source = await unowned(backend, 2)
+    user = backend.restricted(SPLITTING)
+    writes = before(user.document_writes, "delete_document", happens)
+    result = await operations(user, document_writes=writes).split(
+        source, ["1", "2"], output="replace_original", options=YES
+    )
+    track(backend, result)
+    return source, result
+
+
+async def test_an_original_that_is_hidden_before_its_deletion_is_not_said_to_be_trashed(
+    backend: Backend,
+) -> None:
+    """The deletion and the read after it answer 404 for what is hidden, as for what is gone."""
+
+    async def hide(document: int) -> None:
+        owner = await backend.admin.management.get_current_user_id()
+        _ = await backend.admin.permission_writes.set_permissions(
+            "document",
+            document,
+            AccessChange(owner=owner, permissions=ObjectPermissions()),
+        )
+
+    source, result = await replaced_while(backend, hide)
+
+    assert (result.original, result.trashed_ids) == ("unknown", ())
+    assert f"It is not known whether document {source} went to the trash" in (result.message or "")
+    assert "it is not in the trash this user may see" in (result.message or "")
+    assert not backend.in_trash(source)
+
+
+async def test_an_original_that_somebody_trashed_before_its_deletion_is_in_the_trash(
+    backend: Backend,
+) -> None:
+    source, result = await replaced_while(backend, backend.admin.document_writes.delete_document)
+
+    assert (result.original, result.trashed_ids) == ("trashed", (source,))
+    assert backend.in_trash(source)
 
 
 # --- extract_pages

@@ -20,10 +20,11 @@ from harness import paperless_settings, server_settings
 from interleaving import before
 from ratelimit import LimitingTransport, RateLimit
 
+from e2e.echo_server import FORGED, echo_server
 from e2e.echo_server import HOST as ECHO
-from e2e.echo_server import echo_server
 from e2e.helpers import API_VERSION, in_container, num, obj, parse, results
 from e2e.mailbox import BROKEN, PASSWORD, Mailbox, note, wait
+from e2e.uploading import Scope
 from mcp_server_paperless.domain.urls import ANSWER_NOT_SHOWN
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy
@@ -781,6 +782,36 @@ async def test_a_server_that_repeats_the_credentials_leaks_none(
         assert form not in str(told)
 
 
+@pytest.mark.decision("decision-106")
+@pytest.mark.parametrize("how", ["dated", "record"])
+@pytest.mark.parametrize("login", ["login", "plain"])
+async def test_a_server_that_forges_the_start_of_a_log_record(
+    box: Mailbox, client: Connected, how: How, login: str
+) -> None:
+    """A part of a start hides nothing from the redaction; a whole one is the known residual."""
+    _ = box.rule()
+    # Of its own: what the last case shows must not be taken for that of another test.
+    password = f"f0rged-{box.name}{'ü' if login == 'plain' else ''}"
+    plain = base64.b64encode(f"\0{box.name}\0{password}".encode()).decode()
+    secret = plain if login == "plain" else password
+    with echo_server(how) as port:
+        box.change_account(imap_server=ECHO, imap_port=port, password=password)
+        assert box.fetch() == 0
+    forged = [line for line in box.log("mail") if line.startswith(FORGED[how]) and secret in line]
+    assert forged, "the carriage return no longer makes a line of its own"
+
+    for name in ("mail", "paperless"):
+        shown = await call(client, "get_log", name=name, lines=1000)
+        read = await call(
+            client, "paperless_api_get", path=f"/api/logs/{name}/", params={"limit": 60}
+        )
+        for result in (shown, read):
+            # A real server could do the same, so this is named in decision-106, not protected.
+            assert (secret in json.dumps(result)) is (how == "record")
+    told = await call(client, "explain_mail_import", account_id=box.account)
+    assert secret not in json.dumps(told)
+
+
 @pytest.mark.parametrize("how", ["no", "bye"])
 async def test_the_record_of_a_login_that_repeats_the_credentials_shows_none(
     box: Mailbox, client: Connected, how: How
@@ -1083,17 +1114,23 @@ async def test_a_restricted_user_is_told_what_is_missing_and_deletes_unowned_rec
 
 @asynccontextmanager
 async def acting(
-    stack: Stack, limit: RateLimit, ports: Callable[[Ports], Ports] = lambda ports: ports
+    stack: Stack,
+    limit: RateLimit,
+    ports: Callable[[Ports], Ports] = lambda ports: ports,
+    token: str = "",
 ) -> AsyncGenerator[Connected]:
     """A client of the server whose way to Paperless can lose answers or end."""
     async with httpx2.AsyncClient(
         base_url=stack.base_url, transport=LimitingTransport(limit), timeout=30
     ) as http:
         paperless = PaperlessClient(
-            http, StaticTokenProvider(stack.admin_token), retry=RetryPolicy(), upload_timeout=30
+            http,
+            StaticTokenProvider(token or stack.admin_token),
+            retry=RetryPolicy(),
+            upload_timeout=30,
         )
         server = create_server(
-            paperless_settings(stack.base_url, stack.admin_token),
+            paperless_settings(stack.base_url, token or stack.admin_token),
             server_settings(toolsets=["core", "mail"]),
             ports=lambda _client: ports(paperless_ports(paperless)),
         )
@@ -1150,6 +1187,27 @@ async def test_a_deletion_whose_answer_is_lost_is_read_back_and_not_repeated(
     assert outcomes(done) == ["deleted", "deleted"]
     assert "Paperless did not confirm the deletion: " in str(done["message"])
     assert str(done["message"]).endswith(NOT_REPEATED)
+    assert box.records(rule, 0) == []
+
+
+@pytest.mark.decision("decision-107")
+async def test_an_ordinary_user_is_not_told_that_a_record_is_gone_without_an_answer(
+    box: Mailbox, stack: Stack
+) -> None:
+    rule, ids = recorded(box, 2, owner=None)
+    people = Scope(stack)
+    limit = RateLimit(lost=frozenset({"POST /api/processed_mail/bulk_delete/"}))
+    try:
+        token = people.user("view_processedmail", "delete_processedmail", "view_uisettings")
+        async with acting(stack, limit, token=token) as client:
+            done = await call(client, "delete_processed_mail", mail_ids=ids, confirm=True)
+    finally:
+        people.clean_up()
+
+    assert outcomes(done) == ["unknown", "unknown"]
+    message = str(done["message"])
+    assert f"Not visible to you any more, so deleted or hidden: {ids[0]}, {ids[1]}." in message
+    assert message.endswith(NOT_REPEATED)
     assert box.records(rule, 0) == []
 
 

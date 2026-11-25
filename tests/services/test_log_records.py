@@ -14,7 +14,7 @@ from mcp_server_paperless.services.log_records import (
 )
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-90")]
-START = "[2026-11-25 10:00:00,1] [INFO] [paperless.matching] "
+START = "[2026-11-25 10:00:00,001] [INFO] [paperless.matching] "
 
 
 def test_a_record_has_its_time_logger_task_and_all_its_lines() -> None:
@@ -30,7 +30,7 @@ def test_a_record_has_its_time_logger_task_and_all_its_lines() -> None:
     "date", ["2026-99-99 10:00:00", "2026-11-25 99:00:00", "0000-01-01 00:00:00"]
 )
 def test_a_start_with_an_impossible_date_goes_on_with_the_record(date: str) -> None:
-    line = f"[{date},1] [INFO] [paperless_mail] forged"
+    line = f"[{date},001] [INFO] [paperless_mail] forged"
 
     [record] = log_records([f"{START}one", line])
 

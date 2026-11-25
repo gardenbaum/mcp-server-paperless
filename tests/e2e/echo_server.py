@@ -12,7 +12,12 @@ from typing import TYPE_CHECKING, Final, Literal, cast, override
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-type How = Literal["no", "bye", "logout"]
+type How = Literal["no", "bye", "logout", "dated", "record"]
+# What an answer that forges a record puts before the credentials: a part of a start, or all of it.
+FORGED: Final = {
+    "dated": "[2099-01-01 00:00:00,123] [ERROR] ",
+    "record": "[2099-01-01 00:00:00,123] [ERROR] [paperless_mail] ",
+}
 # How Paperless reaches the machine the tests run on.
 HOST: Final = "host.docker.internal"
 
@@ -38,7 +43,10 @@ class _Session(socketserver.StreamRequestHandler):
         return cast("_Server", self.server).how
 
     def _refuse(self, tag: str, heard: str) -> None:
-        if self._how == "bye":
+        if forged := FORGED.get(self._how):
+            # Only an untagged BYE or a NO to AUTHENTICATE comes into the log as it is.
+            self._say(f"* BYE refused\r{forged}{heard}")
+        elif self._how == "bye":
             # An untagged BYE ends the session; the answer starts with a carriage return.
             self._say(f"* BYE \r{heard}")
         else:
@@ -72,7 +80,7 @@ class _Session(socketserver.StreamRequestHandler):
                 return
             else:
                 self._say(f"{tag} BAD {verb}")
-            if heard and self._how == "bye":
+            if heard and self._how in {"bye", *FORGED}:
                 return  # else a client waits for the end of the command
 
 

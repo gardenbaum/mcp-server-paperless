@@ -207,6 +207,8 @@ class _Plan:
     staying: dict[int, list[int]]
     # The rules of which not all records were looked at.
     bounded: tuple[int, ...]
+    # Whether the user is a superuser, to whom no record is hidden.
+    sees_all: bool
 
     def _item(self, mail: ProcessedMail) -> str:
         rule = self.rules[mail.rule_id]
@@ -401,7 +403,17 @@ class ProcessedMailService:
                 _not_done(error)
                 raise
             failure = f" Paperless did not confirm the deletion: {error.message}"
-        return await self._read_back(plan.mails, failure, until)
+        return await self._read_back(plan, failure, until)
+
+    async def _sees_all(self, stopped: str, until: float) -> bool:
+        """Whether the user still is a superuser, to whom Paperless shows every record."""
+        if stopped or self._clock() >= until:
+            return False
+        try:
+            user = await self._documents.get_signed_in()
+        except PaperlessMcpError:
+            return False
+        return user is not None and user.is_superuser
 
     async def _plan(self, mail_ids: Sequence[int], until: float) -> _Plan:
         if not 1 <= len(mail_ids) <= MAX_DELETED:
@@ -431,7 +443,8 @@ class ProcessedMailService:
                 stay = [other for other in others if other not in mail_ids]
                 if stay:
                     staying[mail.id] = stay
-        return _Plan(tuple(mails), rules, mailboxes, staying, tuple(bounded))
+        sees_all = user is not None and user.is_superuser
+        return _Plan(tuple(mails), rules, mailboxes, staying, tuple(bounded), sees_all)
 
     async def _mails(self, mail_ids: Sequence[int], until: float) -> list[ProcessedMail]:
         mails: list[ProcessedMail] = []
@@ -469,10 +482,13 @@ class ProcessedMailService:
             raise PermissionDenied(message, hint="Ask an administrator for it.")
         return user
 
-    async def _read_back(
-        self, mails: Sequence[ProcessedMail], failure: str, until: float
-    ) -> ProcessedMailDeletion:
-        """What became of each record: Paperless names what it was asked for, not what is gone."""
+    async def _read_back(self, plan: _Plan, failure: str, until: float) -> ProcessedMailDeletion:
+        """What became of each record: Paperless names what it was asked for, not what is gone.
+
+        With its answer a record that is not found is gone: it deletes every id it finds, seen by
+        the user or not, or none. Without one, only a superuser sees that none is hidden.
+        """
+        mails = plan.mails
 
         async def look(mail: ProcessedMail) -> Ended[tuple[int, RecordOutcome]]:
             try:
@@ -485,6 +501,9 @@ class ProcessedMailService:
 
         rows, stopped = await one_by_one(mails, look, until=until, clock=self._clock)
         outcomes = dict(rows)
+        sure = not failure or (plan.sees_all and await self._sees_all(stopped, until))
+        unseen = [] if sure else [number for number, found in rows if found == "deleted"]
+        outcomes |= dict.fromkeys(unseen, "unknown")
         for mail in mails:
             _ = outcomes.setdefault(mail.id, "unknown")
         by = {
@@ -498,6 +517,8 @@ class ProcessedMailService:
             said += f" Still there: {_ids(by['still_there'])}."
         if by["unknown"]:
             said += f" Not known: {_ids(by['unknown'])}. {stopped}".rstrip()
+        if unseen:
+            said += f" Not visible to you any more, so deleted or hidden: {_ids(unseen)}."
         said += failure
         if failure or by["unknown"]:
             said += (

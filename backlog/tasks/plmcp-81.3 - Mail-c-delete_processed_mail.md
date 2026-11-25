@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:56Z'
-updated_date: '2026-11-25T15:49:37Z'
+updated_date: '2026-11-25T16:33:48Z'
 labels:
   - mail
 dependencies:
@@ -61,7 +61,7 @@ Cleanup 2026-11-25, merged as b0ca817 (#158). AC 3 stays open. Proven: the refet
 
 Read literally (2026-11-25), AC 3 misses: contract tests of the refetch and of unknown outcomes; tool tests of the refetch, partial and unknown outcomes and a restricted user; E2E with the IMAP server of partial and unknown outcomes. This replaces the list above.
 
-Owner, 2026-11-26, verbatim: "überall wie von dir empfohlen" (translation: "everywhere as you recommend"). Question (a): does "refetch" at contract and tool level count as proven by what the tools say is fetched again and by the record going, the real refetch being proven in E2E with the IMAP server, since neither the fake nor the contract stack has a mail server? Recommended and decided: yes, with this note.
+Owner, 2026-11-26: "Alles wie von dir empfohlen." (everything as you recommend): a record that cannot be read after a deletion counts as deleted only if that can be shown (Paperless answered OK, or the user is a superuser before and after), otherwise unknown; decision-107 supersedes that point of decision-83. Tests first.
 
-The owner's answer above was given to and relayed by the main agent; the quote is as relayed.
+Owner, 2026-11-26, verbatim: "überall wie von dir empfohlen" (translation: "everywhere as you recommend"). Question (a): does "refetch" at contract and tool level count as proven by what the tools say is fetched again and by the record going, the real refetch being proven in E2E with the IMAP server, since neither the fake nor the contract stack has a mail server? Recommended and decided: yes, with this note. The answer was given to and relayed by the main agent; the quote is as relayed.
 <!-- SECTION:NOTES:END -->
