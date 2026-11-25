@@ -5,15 +5,18 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 from e2e.helpers import SEEDED_OBJECTS
+from fakes.accounts import PRIVATE_ASN
 from fastmcp import Client
 from guide_oracle import COMBINATIONS, Seen, check
 from harness import Recorded, serve
 
 from contract.conftest import SCRATCH_TAG
-from mcp_server_paperless.domain.instance import MINIMUM
+from mcp_server_paperless.domain.documents import DocumentPatch
+from mcp_server_paperless.domain.errors import Validation
+from mcp_server_paperless.domain.instance import MINIMUM, NOT_READ, SWITCHED_OFF, UpdateCheck
 
 if TYPE_CHECKING:
-    from contract.conftest import Backend
+    from contract.conftest import Backend, Ports
     from mcp_server_paperless.domain.instance import InstanceStatistics
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
@@ -75,6 +78,35 @@ async def test_a_restricted_user_sees_shared_objects_and_no_system_status(
         False,
     )
     assert overview.paperless_version == backend.expected_version
+
+
+@pytest.mark.decision("decision-101")
+@pytest.mark.contract("InstanceReader.get_overview")
+async def test_the_next_number_counts_hidden_documents_but_not_the_trash(backend: Backend) -> None:
+    async def following(ports: Ports) -> int | None:
+        return (await ports.instance.get_overview()).next_asn
+
+    admin = backend.admin
+    document = backend.new_document()
+    before = await following(admin)
+    assert before is not None
+    assert before > PRIVATE_ASN
+    # A document of another user is as good as any other: the number is one for the instance.
+    _ = await admin.document_writes.update_document(
+        document, DocumentPatch(archive_serial_number=before + 5)
+    )
+    seen = [await following(ports) for ports in (admin, backend.reader)]
+    await admin.document_writes.delete_document(document)
+    after = await following(admin)
+    blind = await following(backend.blind)
+    other = backend.new_document()
+    with pytest.raises(Validation, match="Archive Serial Number already exists in the trash"):
+        _ = await admin.document_writes.update_document(
+            other, DocumentPatch(archive_serial_number=before + 5)
+        )
+
+    assert seen == [before + 6, before + 6]
+    assert (after, blind) == (before, None)
 
 
 @pytest.mark.contract("InstanceReader.get_overview")
@@ -226,3 +258,13 @@ async def test_the_report_follows_the_rights_of_the_user(backend: Backend) -> No
     assert restricted.status is None
     assert restricted.statistics.documents < everything.statistics.documents
     assert seen.statistics.documents < everything.statistics.documents
+
+
+@pytest.mark.contract("SystemReportReader.check_for_update")
+@pytest.mark.decision("decision-105")
+async def test_a_check_that_is_switched_off_asks_nobody(backend: Backend) -> None:
+    # PAPERLESS_ENABLE_UPDATE_CHECK is off in the stack, so no test needs GitHub.
+    for ports in (backend.admin, backend.blind):
+        assert await ports.reports.check_for_update() == UpdateCheck.unknown(SWITCHED_OFF)
+    hidden = backend.restricted(frozenset({"view_document"}))
+    assert await hidden.reports.check_for_update() == UpdateCheck.unknown(NOT_READ)

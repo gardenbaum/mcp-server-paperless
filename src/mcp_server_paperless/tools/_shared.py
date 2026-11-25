@@ -57,6 +57,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.duplicate_resolution import DuplicateResolver
     from mcp_server_paperless.services.files import FileService
     from mcp_server_paperless.services.instance import InstanceService, SystemReportService
+    from mcp_server_paperless.services.lookups import Lookups
     from mcp_server_paperless.services.mail import MailService
     from mcp_server_paperless.services.mail_explanation import MailExplanations
     from mcp_server_paperless.services.notes import NoteService
@@ -166,6 +167,8 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "update_taxonomy_item": "core",
     "delete_taxonomy_item": "core",
     "read_documents": "bulk",
+    "suggest_words": "bulk",
+    "test_storage_path": "bulk",
     "bulk_edit_documents": "bulk",
     "update_documents": "bulk",
     "add_notes": "bulk",
@@ -208,6 +211,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "delete_share_bundle": "sharing",
     "email_documents": "sharing",
     "set_permissions": "permissions",
+    "get_permissions": "permissions",
     "list_users": "permissions",
     "list_groups": "permissions",
     "list_mail_accounts": "mail",
@@ -780,6 +784,19 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    "suggest_words": ToolAnnotations(
+        title="Suggest words",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # A POST in Paperless that only renders the template.
+    "test_storage_path": ToolAnnotations(
+        title="Test storage path",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     # Destructive (decision-6): it can trash documents and overwrite what many of them hold, so
     # every execution needs confirm, and dry_run previews it. Not idempotent: a repeated trashing
     # or reprocessing is another action (a repeated tag change leaves the state as it is).
@@ -859,6 +876,12 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         read_only_hint=False,
         destructive_hint=True,
         idempotent_hint=False,
+        open_world_hint=False,
+    ),
+    "get_permissions": ToolAnnotations(
+        title="Get permissions",
+        read_only_hint=True,
+        idempotent_hint=True,
         open_world_hint=False,
     ),
     "list_users": ToolAnnotations(
@@ -968,11 +991,12 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    # On request Paperless asks GitHub for its newest release.
     "get_system_report": ToolAnnotations(
         title="Get system report",
         read_only_hint=True,
         idempotent_hint=True,
-        open_world_hint=False,
+        open_world_hint=True,
     ),
     "acknowledge_tasks": ToolAnnotations(
         title="Acknowledge tasks",
@@ -1237,6 +1261,7 @@ class Services:
     versions: VersionService
     version_uploads: VersionUploadService
     text_edits: TextEditor
+    lookups: Lookups
     read_documents: ReadDocuments
     bulk_documents: BulkDocumentEditor
     bulk_updates: BulkUpdates

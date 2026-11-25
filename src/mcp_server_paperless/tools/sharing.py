@@ -16,6 +16,7 @@ from fastmcp.server.providers import LocalProvider
 from pydantic import Field
 
 from mcp_server_paperless.domain.sharing import (
+    BundleStatus,
     EmailSent,
     FileVersionKind,
     ShareBundleInfo,
@@ -129,7 +130,15 @@ async def delete_share_link(
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["list_share_bundles"])
 @boundary
 async def list_share_bundles(
-    ctx: Context, page: Page = 1, page_size: Size = PAGE_SIZE
+    ctx: Context,
+    status: Annotated[
+        BundleStatus | None, Field(description="Only bundles with this status; default: all.")
+    ] = None,
+    document_id: Annotated[
+        PositiveId | None, Field(description="Only bundles that hold this document; default: all.")
+    ] = None,
+    page: Page = 1,
+    page_size: Size = PAGE_SIZE,
 ) -> ShareBundleListing:
     """List the share-link bundles (one public URL for a ZIP archive of several documents).
 
@@ -138,7 +147,9 @@ async def list_share_bundles(
     rebuild_share_bundle tries again), the size and the expiry. count is the total; pass
     next_page as page to see more.
     """
-    return await services(ctx).sharing.list_bundles(page=page, page_size=page_size)
+    return await services(ctx).sharing.list_bundles(
+        page=page, page_size=page_size, status=status, document_id=document_id
+    )
 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["create_share_bundle"])
