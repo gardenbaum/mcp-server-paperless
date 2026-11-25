@@ -1520,7 +1520,12 @@ async def test_the_remaining_tools_have_a_scenario_with_all_their_arguments() ->
     await sweep("get_mail_rule", {"rule_id": 1}, (), prepare=with_mail)
     await sweep("delete_mail_account", {"account_id": 2}, (), prepare=with_mail)
     await sweep("delete_mail_rule", {"rule_id": 1}, (), prepare=with_mail)
-    await sweep("delete_processed_mail", {"mail_ids": [1]}, (), prepare=with_processed_mail)
+    await sweep(
+        "delete_processed_mail",
+        {"mail_ids": [1], "dry_run": False},
+        (),
+        prepare=with_processed_mail,
+    )
     await sweep("list_mail_accounts", {"page": 1, "page_size": 10}, (), prepare=with_mail)
     await sweep(
         "list_mail_rules", {"account_id": 1, "page": 1, "page_size": 10}, (), prepare=with_mail
