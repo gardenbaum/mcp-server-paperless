@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T17:37:39Z'
-updated_date: '2026-11-25T17:44:42Z'
+updated_date: '2026-11-25T18:01:22Z'
 labels:
   - tools
 dependencies: []
@@ -57,4 +57,7 @@ First part of PLMCP-100: an ambiguous name costs a turn, and the assistant can p
 <!-- SECTION:NOTES:BEGIN -->
 Probes (hosted, run 45666927531, part 1 of 6; temporary module deleted): P1: FastMCP's client gets oneOf and enumNames unchanged on 2026-07-28 and handshake; over HTTP 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05 carry both unchanged and answers come back; 8 rounds work on both eras, 11 end in InputRequiredRoundsExceededError on 2026-07-28. So clients before 2025-11-25 get enum and enumNames (owner decision 5a).
 P2 (3.5.1): tags, correspondents, document types, storage paths and saved views hold one exact name once per owner and once without owner, and any other case; custom fields, workflows, users and groups differ in case only. Two objects of one exact name therefore always differ by owner: owner decision 6, 'b if P2 shows that most doubles differ only by owner', takes effect, the title names the owner.
+
+Red first: domain and service tests failed to import; 9 red for the write mark in the client and the fake; tool tests failed to import.
+Differs from the design: (1) After a pick, a name that became unique and is not the picked object would have been written (found by a test): such a call now fails with a Conflict; the pick carries its topic (kind and word) for that. (2) Title names the owner (owner decision 6b through P2); the name is read from the cached list of users, '#id' where that fails. (3) The question lives in domain/choices.py, not errors.py, the text is built at the boundary (an import cycle otherwise). (4) The sentence after a no appears after decline and cancel only, as approved; timeout, malformed and replayed answers get the plain error. (5) main at 2b70215 merged: get_permissions, test_storage_path, remove_second_factor and the toolset entry name:read are covered; acknowledge_tasks takes no name.
 <!-- SECTION:NOTES:END -->

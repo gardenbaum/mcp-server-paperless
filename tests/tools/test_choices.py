@@ -35,7 +35,7 @@ from mcp.types import ElicitResult, InputRequiredResult, ListRootsResult
 from mcp_server_paperless.domain.choices import Choice, Pick, Question, note_write, picked
 from mcp_server_paperless.domain.errors import Ambiguous, PermissionDenied, UpstreamUnavailable
 from mcp_server_paperless.tools import _shared
-from mcp_server_paperless.tools._shared import ANNOTATIONS, boundary
+from mcp_server_paperless.tools._shared import ANNOTATIONS, TOOL_TOOLSETS, boundary
 from mcp_server_paperless.tools.confirmation import DIALOGS, MAX_CHOICES, MAX_PICKS, Asked, Dialogs
 
 if TYPE_CHECKING:
@@ -374,7 +374,7 @@ RENAME: Json = {"workflow": TWIN, "name": "New"}
 @both_eras
 async def test_matches_that_changed_are_asked_again(mode: Mode) -> None:
     state, shown = doubled(), picks(SECOND)
-    third = state.workflows[-1].model_copy(update={"id": 60})
+    third = state.workflows[-2].model_copy(update={"id": 60})
 
     async def one_more() -> None:
         if len(shown.questions) == 1:
@@ -391,10 +391,11 @@ async def test_matches_that_changed_are_asked_again(mode: Mode) -> None:
 @both_eras
 async def test_matches_that_keep_changing_end_with_the_old_error(mode: Mode) -> None:
     state, shown = doubled(), picks(SECOND)
+    twin = state.workflows[-2]
 
     async def one_more() -> None:
         number = 60 + len(shown.questions)
-        state.workflows.append(state.workflows[-1].model_copy(update={"id": number}))
+        state.workflows.append(twin.model_copy(update={"id": number}))
 
     result = await call(
         server(source(state, writes=False)), mode, shown.before(one_more), "update_workflow", RENAME
@@ -1013,23 +1014,20 @@ def _titles(cases: tuple[tuple[str, str, Json], ...]) -> list[str]:
     return [f"{tool}{place}-{n}" for n, (tool, place, _) in enumerate(cases)]
 
 
-@pytest.fixture(scope="module")
-def unwritten() -> FastMCP:
-    """One server for every call that writes nothing."""
-    return server(reading())
-
-
-@dataclasses.dataclass
 class Shared:
-    """One server for many calls that write, each on a world of its own."""
+    """One server per toolset for many calls that may write, each on a world of its own."""
 
-    fake: FakePaperless
-    served: FastMCP
+    def __init__(self) -> None:
+        self.fake: FakePaperless = source(doubled())
+        self.servers: dict[str, FastMCP] = {}
 
     async def call(self, mode: Mode, handler: Handler | None, tool: str, arguments: Json) -> Wrote:
+        toolset = TOOL_TOOLSETS[tool]
+        if toolset not in self.servers:
+            self.servers[toolset] = serve(self.fake, toolsets=[toolset])
         self.fake.state = doubled()
         self.fake.sent_writes = []
-        result = await call(self.served, mode, handler, tool, arguments)
+        result = await call(self.servers[toolset], mode, handler, tool, arguments)
         return Wrote(result, self.fake.sent_writes)
 
 
@@ -1041,13 +1039,12 @@ class Wrote:
 
 @pytest.fixture(scope="module")
 def shared() -> Shared:
-    fake = source(doubled())
-    return Shared(fake, server(fake))
+    return Shared()
 
 
 @pytest.mark.parametrize(("tool", "place", "arguments"), CASES, ids=_titles(CASES))
 async def test_a_write_tool_asks_and_writes_what_the_call_with_the_id_writes(
-    shared: Shared, unwritten: FastMCP, tool: str, place: str, arguments: Json
+    shared: Shared, tool: str, place: str, arguments: Json
 ) -> None:
     """On both eras: what is written is compared with the call that names the id."""
     del place
@@ -1068,23 +1065,25 @@ async def test_a_write_tool_asks_and_writes_what_the_call_with_the_id_writes(
             assert done.writes
         assert done.writes == expected.writes
 
-        plain = await call(unwritten, mode, None, tool, arguments)
-        declined = await call(unwritten, mode, picks(None).handler, tool, arguments)
+        plain = await shared.call(mode, None, tool, arguments)
+        declined = await shared.call(mode, picks(None).handler, tool, arguments)
 
-        assert text(plain).startswith("2 ")
-        assert text(declined) == f"{text(plain)} {NOT_PICKED}"
+        assert plain.writes == declined.writes == []
+        assert text(plain.result).startswith("2 ")
+        assert text(declined.result) == f"{text(plain.result)} {NOT_PICKED}"
 
 
 @both_eras
 @pytest.mark.parametrize(("tool", "place", "arguments"), READS, ids=_titles(READS))
 async def test_a_read_tool_never_asks(
-    unwritten: FastMCP, mode: Mode, tool: str, place: str, arguments: Json
+    shared: Shared, mode: Mode, tool: str, place: str, arguments: Json
 ) -> None:
     del place
     shown = picks(FIRST)
 
-    result = await call(unwritten, mode, shown.handler, tool, arguments)
+    done = await shared.call(mode, shown.handler, tool, arguments)
 
     assert shown.questions == []
-    assert result.is_error
-    assert "match 'TWIN'" in text(result)
+    assert done.result.is_error
+    assert done.writes == []
+    assert "match 'TWIN'" in text(done.result)

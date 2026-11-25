@@ -48,7 +48,7 @@ def doubled() -> FakeState:
         state.document_types.append(FakeTaxonomy(id=number, name=name))
         state.storage_paths.append(FakeStoragePath(id=number, name=name))
         state.custom_fields.append(FakeCustomField(id=number, name=name, data_type="date"))
-        state.users.append(FakeUser(id=number, username=name))
+        state.users.append(FakeUser(id=number, username=name, mfa=True))
         state.groups.append(FakeGroup(id=number, name=name))
         state.saved_views.append(
             FakeSavedView(
@@ -63,12 +63,15 @@ def doubled() -> FakeState:
                 id=number,
                 name=name,
                 order=number,
-                enabled=False,
+                enabled=True,
                 triggers=(
                     WorkflowTrigger(id=number, type=5, settings={"filter_has_tags": [number]}),
                 ),
                 actions=(WorkflowAction(id=number, type=1, settings={"assign_tags": [4]}),),
             )
+        )
+        state.trash.append(
+            FakeDocument(id=100 + number, title=f"old of {name}", document_type=number)
         )
         state.documents.append(
             FakeDocument(
@@ -79,6 +82,7 @@ def doubled() -> FakeState:
                 correspondent=number,
                 document_type=number,
                 storage_path=number,
+                custom_fields={number: "2026-01-01"},
                 page_count=2,
             )
         )
@@ -226,8 +230,10 @@ def _documents() -> Iterator[tuple[str, str, Json]]:
     document: Json = {"document_id": 10}
     for name in ONE:
         yield "update_document", f".{name}", {**document, name: TWIN}
-    for name in ("tags_add", "tags_remove", "tags_set", "remove_custom_fields"):
+    for name in ("tags_add", "tags_set"):
         yield "update_document", f".{name}", {**document, name: [TWIN]}
+    for name in ("tags_remove", "remove_custom_fields"):
+        yield "update_document", f".{name}", {"document_id": SECOND, name: [TWIN]}
     yield "update_document", ".custom_fields", {**document, "custom_fields": {TWIN: "2026-01-01"}}
 
     upload: Json = {"content_base64": "JVBERi0xLjQgbmV3", "filename": "x.pdf"}
@@ -248,7 +254,7 @@ def _bulk() -> Iterator[tuple[str, str, Json]]:
             yield tool, place, arguments
     run: Json = {"workflow": TWIN, "document_ids": [10], "apply_filters": False}
     yield "run_workflow", ".workflow", run
-    bulk: Json = {"document_ids": [10, 11]}
+    bulk: Json = {"document_ids": [10, SECOND]}
     for place, operation in (
         ("tags", {"op": "add_tags", "tags": [TWIN]}),
         ("tags", {"op": "remove_tags", "tags": [TWIN]}),
@@ -299,7 +305,7 @@ def _rules() -> Iterator[tuple[str, str, Json]]:
             ".assign_correspondent",
             {
                 **rule,
-                "assign_correspondent_from": "custom",
+                "assign_correspondent_from": "selected",
                 "assign_correspondent": TWIN,
             },
         )
@@ -328,6 +334,7 @@ def _names() -> Iterator[tuple[str, str, Json]]:
     yield "create_user", ".groups", {"username": "new", "groups": [TWIN]}
     yield "update_user", ".groups", {"user": "e2e-reader", "groups": [TWIN]}
     yield "update_user", ".user", {"user": TWIN, "first_name": "New"}
+    yield "update_user", ".user", {"user": TWIN, "remove_second_factor": True}
     yield "delete_user", ".user", {"user": TWIN}
     yield "update_group", ".group", {"group": TWIN, "name": "New"}
     yield "delete_group", ".group", {"group": TWIN}
@@ -398,6 +405,8 @@ READS: Final[tuple[tuple[str, str, Json], ...]] = (
     ("get_task_overview", ".owner", {"owner": TWIN}),
     ("list_tasks", ".owner", {"owner": TWIN}),
     ("list_trash", ".document_type", {"document_type": TWIN}),
+    ("test_storage_path", ".storage_path", {"document_id": 10, "storage_path": TWIN}),
+    ("get_permissions", ".items", {"kind": "tag", "items": [TWIN]}),
 )
 # Places a schema shows like one for a name that take no name of an object.
 NO_NAMES: Final = frozenset(
