@@ -480,7 +480,8 @@ async def test_deleting_records_is_shown_first_and_done_once_confirmed() -> None
     done = await call(source, "delete_processed_mail", mail_ids=[2], confirm=True)
 
     assert preview["dry_run"] is True
-    assert str(preview["message"]) in text
+    effect = str(preview["message"]).split("Confirming would ")[1].split(" not known here.")[0]
+    assert effect in text
     assert "DELETES the mail on the mail server" in text
     assert "1 'Mail 1'" in text
     assert done["mails"] == [

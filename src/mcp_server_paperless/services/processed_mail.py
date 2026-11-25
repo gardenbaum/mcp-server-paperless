@@ -33,6 +33,7 @@ from mcp_server_paperless.domain.mail import (
     ProcessedMailDetail,
     Reference,
 )
+from mcp_server_paperless.services.bulk_documents import DRY_RUN, TO_GO_AHEAD
 from mcp_server_paperless.services.document_runner import (
     RUN_SECONDS,
     Ended,
@@ -329,8 +330,8 @@ class ProcessedMailService:
         plan = await self._plan(mail_ids, until)
         await self._check_rights(plan.mails)
         if dry_run:
-            refusal = ConfirmationRequired.for_effect(plan.effect, scope=None)
-            return _report(plan.mails, {}, refusal.message, dry_run=True)
+            said = f"{DRY_RUN} Confirming would {plan.effect}. {TO_GO_AHEAD}"
+            return _report(plan.mails, {}, said, dry_run=True)
         if not confirm:
             ConfirmationRequired.require(plan.effect, scope=plan.scope)
         self._in_time(until)

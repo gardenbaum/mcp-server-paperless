@@ -24,6 +24,7 @@ from mcp_server_paperless.domain.errors import (
     Validation,
 )
 from mcp_server_paperless.domain.mail import Reference
+from mcp_server_paperless.services.bulk_documents import DRY_RUN, TO_GO_AHEAD
 from mcp_server_paperless.services.processed_mail import (
     ERROR_SLICE,
     MAX_RECORDS,
@@ -417,8 +418,9 @@ async def test_a_preview_says_the_same_and_deletes_nothing() -> None:
     assert report.dry_run
     assert outcomes(report) == [(1, "would_delete")]
     assert report.message.startswith(
-        "Nothing was changed. Confirming would permanently delete 1 record of processed mail,"
+        f"{DRY_RUN} Confirming would permanently delete 1 record of processed mail,"
     )
+    assert report.message.endswith(f"not known here. {TO_GO_AHEAD}")
     assert setup.left() == [1]
 
 
