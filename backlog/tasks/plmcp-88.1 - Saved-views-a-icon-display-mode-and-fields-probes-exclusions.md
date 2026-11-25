@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T10:18:26Z'
-updated_date: '2026-11-25T10:32:41Z'
+updated_date: '2026-11-25T11:12:02Z'
 labels:
   - views
 dependencies: []
@@ -55,4 +55,6 @@ Probes: CI run 45594222648, job 139135939753, commit c549208 (tests/e2e/test_vie
 Red first: domain, service and contract modules failed to import, adapter 8, tool 2 tests red, then green; the contract test for deleted custom fields red on the fake. E2E written before its first hosted run. 26 hand mutants, 1 survived (a duplicate check, deleted).
 Deliberate: surface and message snapshots; hint of "Nothing to change". Guide limit unchanged.
 just check was not run as a whole locally.
+
+Review: custom fields only looked up when shown (test), echoed icon and field cut and on one line, contradictory arguments refused before anything is read. Tests first (6 red); 5 mutants, none survived.
 <!-- SECTION:NOTES:END -->
