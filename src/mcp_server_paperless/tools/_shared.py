@@ -27,6 +27,7 @@ from mcp.types import (
 from pydantic import BaseModel, Field, JsonValue
 
 from mcp_server_paperless.domain.bulk import MAX_DOCUMENTS
+from mcp_server_paperless.domain.diagnostics import error_place
 from mcp_server_paperless.domain.documents import NameOrId
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
@@ -1206,6 +1207,11 @@ def guide_for(ctx: Context, *, ai_enabled: bool | None) -> ToolsetGuide:
     return cast("GuideFor", ctx.lifespan_context[GUIDE])(now=ai_enabled)
 
 
+def _place(error: BaseException) -> dict[str, str]:
+    """Where in the code ``error`` was raised, for a log record."""
+    return {"at": error_place(error).removeprefix(" at ")}
+
+
 def boundary[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
     """The boundary of a tool: confirmation dialogs, and every exception as a ``ToolError``.
 
@@ -1231,7 +1237,7 @@ def boundary[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R
         except PaperlessMcpError as error:
             raise ToolError(error.describe()) from None
         except Exception as error:
-            logger.error("%s failed: %s", name, type(error).__name__)  # noqa: TRY400 -- no traceback above DEBUG
+            logger.error("%s failed: %s", name, type(error).__name__, extra=_place(error))  # noqa: TRY400 -- no traceback above DEBUG
             logger.debug("%s failed", name, exc_info=True)
             message = f"Internal error in {name}; the server log has details."
             raise ToolError(message) from None
@@ -1242,9 +1248,10 @@ def boundary[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R
 def resource_boundary[**P, R](resource: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
     """The error boundary of a resource, like ``boundary`` for tools.
 
-    A domain error becomes a ``ResourceError`` with its client-safe message and hint, logged at
-    INFO. Any other exception is a bug: the client gets a generic message and the log gets only
-    the exception type at ERROR (the traceback at DEBUG).
+    A domain error becomes a ``ResourceError`` with its client-safe message and hint, never
+    logged: it may quote Paperless. Any other exception is a bug: the client gets a generic message
+    (the traceback is logged at DEBUG). ``CallLogging`` logs both by type; FastMCP's own record,
+    with the address and a traceback, goes to DEBUG.
     """
     name = resource.__name__
 
@@ -1252,16 +1259,15 @@ def resource_boundary[**P, R](resource: Callable[P, Awaitable[R]]) -> Callable[P
     async def guarded(*args: P.args, **kwargs: P.kwargs) -> R:
         try:
             return await resource(*args, **kwargs)
-        except ResourceError:
+        except ResourceError as error:
+            error.log_level = logging.DEBUG
             raise
         except PaperlessMcpError as error:
-            logger.info("%s: %s", name, error.describe())
-            raise ResourceError(error.describe()) from None
-        except Exception as error:
-            logger.error("%s failed: %s", name, type(error).__name__)  # noqa: TRY400 -- no traceback above DEBUG
+            raise ResourceError(error.describe(), log_level=logging.DEBUG) from None
+        except Exception:
             logger.debug("%s failed", name, exc_info=True)
             message = f"Internal error in {name}; the server log has details."
-            raise ResourceError(message) from None
+            raise ResourceError(message, log_level=logging.DEBUG) from None
 
     return guarded
 

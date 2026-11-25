@@ -17,6 +17,7 @@ import pytest
 from contract.conftest import delete_and_empty_trash, live_in_trash, live_ports
 from fastmcp import Client
 from harness import paperless_settings, server_settings
+from mcp.shared.exceptions import MCPError
 from mcp.types import BlobResourceContents, EmbeddedResource
 
 from e2e.helpers import consume_text, num, parse, results, seq
@@ -271,6 +272,48 @@ async def test_text_thumbnail_and_file_of_an_entry_are_read(users: Users) -> Non
     assert not image.is_error
     assert len(image.content) == 2
     assert "has no archive version" in text(archive)
+
+
+async def test_the_thumbnail_of_what_is_in_the_trash_is_refused_to_everyone(
+    stack: Stack, users: Users
+) -> None:
+    document, parent = users.document(unique()), users.document(unique())
+    kept = num(output(await users.upload(unique(), document_id=parent))["version_id"])
+    gone = num(output(await users.upload(unique(), document_id=parent))["version_id"])
+    token = users.user("view_document")
+    with httpx2.Client(
+        base_url=stack.base_url,
+        headers={"Authorization": f"Token {token}", "Accept": "application/json; version=10"},
+    ) as viewer:
+        for number in (document, parent):
+            grant = {"users": users.users, "groups": []}
+            _ = stack.admin.patch(
+                f"/api/documents/{number}/",
+                json={"set_permissions": {"view": grant, "change": {"users": [], "groups": []}}},
+            ).raise_for_status()
+        _ = output(await users.call("delete_document", document_id=document, confirm=True))
+        _ = output(
+            await users.call(
+                "delete_document_version", document_id=parent, version_id=gone, confirm=True
+            )
+        )
+
+        for number in (document, gone):  # Paperless itself serves them
+            sent = viewer.get(f"/api/documents/{number}/thumb/").raise_for_status()
+            assert sent.headers["content-type"] == "image/webp"
+    for caller in (None, token):
+        for number in (document, gone):
+            refused = await users.call("get_document_thumbnail", caller, document_id=number)
+            assert refused.is_error
+            assert f"{number} is in the trash" in text(refused)
+        for number in (parent, kept):
+            assert not (
+                await users.call("get_document_thumbnail", caller, document_id=number)
+            ).is_error
+    created = server(stack, token)
+    async with Client(created) as client:
+        with pytest.raises(MCPError, match=f"{document} is in the trash"):
+            _ = await client.read_resource(f"paperless://documents/{document}/thumbnail")
 
 
 async def test_a_filter_only_shows_and_the_shown_ids_are_restored_or_deleted(

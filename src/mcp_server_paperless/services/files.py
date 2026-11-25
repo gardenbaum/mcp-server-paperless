@@ -5,6 +5,7 @@ one is read in parts, each within the limit, or saved into a directory the opera
 stdio only); nothing else is ever written to the host (decision-7, decision-45).
 """
 
+import contextlib
 import hashlib
 from dataclasses import dataclass
 from pathlib import PurePath
@@ -35,6 +36,10 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.file_sink import FileSink
 
 PDF = "application/pdf"
+TRASHED_HINT = (
+    "Where the trash lists it for this user, get_trashed_file shows its thumbnail and "
+    "restore_from_trash brings it back, if the trash toolset is enabled."
+)
 
 
 def _over_limit(limit: int, link: str, *, saving: bool) -> str:
@@ -105,11 +110,12 @@ class FileService:
         """The thumbnail image of a document; thumbnails are small and have no limit.
 
         Raises:
-            NotFound: No such document.
+            NotFound: No such document, or it is in the trash.
             PermissionDenied: The user may not see the document.
             PaperlessMcpError: Paperless sent an empty image.
         """
         found = await self._reader.get_document_thumbnail(document_id)
+        await self._check_live(document_id)
         if not found.content:
             message = f"Paperless sent an empty thumbnail for document {document_id}."
             raise PaperlessMcpError(message)
@@ -125,6 +131,26 @@ class FileService:
             note=None,
         )
         return Thumbnail(report=report, data=found.content)
+
+    async def _check_live(self, document_id: int) -> None:
+        """Refuse what is in the trash, whose thumbnail Paperless serves like that of a live one.
+
+        Asked after the image came, so that one deleted meanwhile is not shown. The list names
+        live documents; a version is live if its document is listed and its own metadata, slower to
+        make, is there.
+        """
+        if document_id in await self._reader.get_document_titles([document_id]):
+            return
+        root = await self._reader.get_root(document_id)
+        if root != document_id and root in await self._reader.get_document_titles([root]):
+            with contextlib.suppress(NotFound):
+                _ = await self._reader.get_document_metadata(document_id)
+                return
+        message = (
+            f"{document_id} is in the trash: it is a deleted document or version, so its "
+            "thumbnail is not shown here."
+        )
+        raise NotFound(message, hint=TRASHED_HINT)
 
     async def download(
         self, document_id: int, version: FileVersion, *, version_id: int | None = None

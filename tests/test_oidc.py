@@ -45,6 +45,7 @@ from mcp_server_paperless.app import (
     public_origin,
 )
 from mcp_server_paperless.domain.errors import InvalidConfiguration
+from mcp_server_paperless.observability import configure_logging
 from mcp_server_paperless.settings import (
     CLAUDE_CALLBACK,
     CLAUDE_COM_CALLBACK,
@@ -527,6 +528,47 @@ async def test_an_id_token_that_fails_a_check_signs_nobody_in(
 
     async with app.router.lifespan_context(app):
         assert not await signs_in(app)
+
+
+@pytest.fixture
+def records(caplog: pytest.LogCaptureFixture) -> Iterator[pytest.LogCaptureFixture]:
+    """What is logged at INFO with the server's logging, also for FastMCP's own logger."""
+    configure_logging("INFO")
+    logging.getLogger().addHandler(caplog.handler)  # configure_logging removed it
+    fastmcp = logging.getLogger("fastmcp")
+    fastmcp.addHandler(caplog.handler)
+    yield caplog
+    fastmcp.removeHandler(caplog.handler)
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("isolated_logging")
+async def test_what_a_provider_refuses_a_sign_in_with_is_logged_by_type(
+    issuer: Issuer, records: pytest.LogCaptureFixture
+) -> None:
+    issuer.refusal = {"error": "invalid_grant", "error_description": "canary-of-the-provider"}
+    app = make_app(http_settings(), oidc_settings(issuer.url))
+
+    async with app.router.lifespan_context(app):
+        assert not await signs_in(app)
+
+    assert "IdP token exchange failed: OAuthError" in records.messages
+    assert "canary-of-the-provider" not in records.text
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("isolated_logging")
+async def test_the_mail_address_in_a_refused_id_token_is_not_logged(
+    issuer: Issuer, records: pytest.LogCaptureFixture
+) -> None:
+    issuer.claims = {"iss": "https://elsewhere.example", "email": "canary@example.test"}
+    app = make_app(http_settings(), oidc_settings(issuer.url))
+
+    async with app.router.lifespan_context(app):
+        assert not await signs_in(app)
+
+    assert "issuer mismatch" in records.text
+    assert "canary" not in records.text
 
 
 @pytest.mark.anyio
