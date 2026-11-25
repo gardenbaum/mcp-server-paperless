@@ -671,6 +671,18 @@ async def test_an_answer_without_the_servers_state_is_not_read() -> None:
     assert isinstance(first, InputRequiredResult)
 
 
+async def test_a_value_that_was_not_offered_never_reaches_a_service() -> None:
+    """Also one that would take any value; the tool does not run again."""
+    served, runs = synthetic(writes=False)
+    async with Client(served, elicitation_handler=NEVER) as client:
+        state = state_of(await raw(client, None, None, {}, tool="synthetic"))
+        reply = answer("accept", {"choice": "3"})
+        result = refused(await raw(client, reply, state, {}, tool="synthetic"))
+
+    assert result == "Two match. Hint: Pass the id."
+    assert runs == ["run"]
+
+
 async def test_a_state_without_its_answer_is_the_old_error() -> None:
     async with Client(server(reading()), elicitation_handler=NEVER) as client:
         for reply, key in ((None, "choice"), (PICK, "other"), (answer("accept", YES), "confirm")):
