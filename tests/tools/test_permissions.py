@@ -7,6 +7,7 @@ grants and changing an owner need confirm (decision-12, decision-15); merging do
 from typing import TYPE_CHECKING, cast
 
 import pytest
+from fakes.mail import FakeMailAccount
 from fakes.paperless import FakePaperless, FakeState, seeded
 from fastmcp import Client
 from harness import serve
@@ -295,3 +296,30 @@ async def test_a_user_who_may_not_view_users_gets_an_error_naming_the_permission
     message = await refusal(reader, "list_users")
 
     assert "permission" in message
+
+
+@pytest.mark.decision("decision-87")
+async def test_a_mail_account_is_shared_after_a_confirmation_that_says_what_it_gives() -> None:
+    state = seeded()
+    state.mail_accounts.append(
+        FakeMailAccount(
+            id=5,
+            name="Work",
+            imap_server="h",
+            imap_port=1,
+            username="u",
+            password="pa55-x",
+            owner=2,
+        )
+    )
+    source = fake(state)
+    arguments = {"kind": "mail_account", "items": [5], "change_users": ["e2e-reader"]}
+
+    message = await refusal(source, "set_permissions", **arguments)
+    output = await call(source, "set_permissions", **arguments, confirm=True)
+
+    assert "send its saved password or token to a server of their choice" in message
+    assert "grant on an account is none on its rules" in message
+    assert output["changed_count"] == 1
+    assert "pa55-x" not in str(output) + message
+    assert state.mail_accounts[0].editors == {3}
