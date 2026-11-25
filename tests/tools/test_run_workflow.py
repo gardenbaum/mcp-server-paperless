@@ -360,9 +360,9 @@ async def sized(title: str, name: str) -> tuple[str, str]:
         (
             "Scan of a long and quite ordinary invoice, page 1 of the second quarter",
             "Value ",
-            (12_020, 7_164),
+            (12_076, 7_164),
         ),
-        ("Scan " + chr(0x201D) * 123, chr(0x1F676) * 60, (42_924, 24_564)),
+        ("Scan " + chr(0x201D) * 123, chr(0x1F676) * 60, (42_980, 24_564)),
     ],
     ids=["ordinary", "hostile"],
 )
