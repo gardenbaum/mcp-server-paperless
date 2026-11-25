@@ -260,8 +260,14 @@ def test_a_hostile_text_is_read_in_linear_time(part: str) -> None:
             [f"to {URL_NOT_SHOWN}\n{URL_NOT_SHOWN}", f"{URL_NOT_SHOWN}\nok"],
         ),
         (
-            ["[2026-11-24 10:00:00,123] [INFO] https://h/x", "[2026-11-24 10:00:01,123] by a@b"],
-            ["[2026-11-24 10:00:00,123] [INFO] https://h/x", "[2026-11-24 10:00:01,123] by a@b"],
+            [
+                "[2026-11-24 10:00:00,123] [INFO] [paperless.x] https://h/x",
+                "[2026-11-24 10:00:01,123] [INFO] [paperless.x] by a@b",
+            ],
+            [
+                "[2026-11-24 10:00:00,123] [INFO] [paperless.x] https://h/x",
+                "[2026-11-24 10:00:01,123] [INFO] [paperless.x] by a@b",
+            ],
         ),
         ([], []),
     ],
@@ -269,7 +275,7 @@ def test_a_hostile_text_is_read_in_linear_time(part: str) -> None:
 def test_a_url_split_over_lines_of_a_record_loses_its_credentials(
     lines: list[str], shown: list[str]
 ) -> None:
-    start = "[2026-11-24 09:00:00,123] [INFO] the first line of the record"
+    start = "[2026-11-24 09:00:00,123] [INFO] [paperless.x] the first line of the record"
 
     assert lines_without_credentials([start, *lines]) == [start, *shown]
 
@@ -284,7 +290,7 @@ def test_many_lines_are_read_in_linear_time(line: str) -> None:
     assert time.process_time() - started < 5  # quadratic would take minutes
 
 
-DATED = "[2026-11-24 10:00:00,123] [INFO] by a@b"
+DATED = "[2026-11-24 10:00:00,123] [INFO] [paperless.x] by a@b"
 
 
 @pytest.mark.parametrize(

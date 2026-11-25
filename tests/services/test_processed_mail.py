@@ -13,6 +13,7 @@ from fakes.accounts import ADMIN
 from fakes.mail import FakeMailAccount, FakeMailRule, FakeProcessedMail
 from fakes.paperless import FakePaperless, FakeState, FakeUser, seeded
 
+from mcp_server_paperless.domain.documents import SignedIn
 from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     AuthenticationFailed,
@@ -37,7 +38,6 @@ from mcp_server_paperless.services.processed_mail import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from mcp_server_paperless.domain.documents import SignedIn
     from mcp_server_paperless.domain.mail import (
         MailAccount,
         MailRule,
@@ -1281,3 +1281,205 @@ async def test_an_accepted_confirmation_that_has_become_too_long_is_refused() ->
         _ = await setup.delete(*ids, confirm=False)
 
     assert setup.left() == list(ids)
+
+
+HIDDEN_SAID: Final = (
+    "Not visible to you any more, so deleted or hidden: {}. Paperless did not confirm the "
+    "deletion: Paperless did not respond in time. It is not repeated: check with "
+    "list_processed_mail before you call this again."
+)
+MAY: Final = {"view_processedmail", "delete_processedmail", "view_mailrule", "view_uisettings"}
+
+
+@final
+class Unconfirmed(FakePaperless):
+    """A deletion without an answer, during which the caller's rights can change."""
+
+    error: PaperlessMcpError = UpstreamTimeout("Paperless did not respond in time.")
+    done: Sequence[int] = ()
+    hidden: Sequence[int] = ()
+    asked: int = 0
+    after: SignedIn | PaperlessMcpError | None = None
+    changed: bool = False
+
+    @override
+    async def delete_processed_mail(self, mail_ids: Sequence[int]) -> None:
+        rows = self.state.processed_mail
+        rows[:] = [row for row in rows if row.id not in self.done]
+        for row in rows:
+            if row.id in self.hidden:
+                row.owner = 2
+        self.asked = -1
+        raise self.error
+
+    @override
+    async def get_signed_in(self) -> SignedIn | None:
+        if not self.asked or not self.changed:
+            return await super().get_signed_in()
+        if isinstance(self.after, PaperlessMcpError):
+            raise self.after
+        return self.after
+
+
+def unconfirmed(user: str = ADMIN[0], permissions: set[str] | None = None) -> Setup:
+    setup = Setup(user, permissions=permissions, make=Unconfirmed)
+    setup.rule(owner=None)
+    for number in range(1, 4):
+        setup.mail(uid=f"u{number}", status="FAILED", received=DAY, owner=None)
+    return setup
+
+
+@pytest.mark.decision("decision-107")
+async def test_without_an_answer_a_hidden_record_is_not_said_to_be_deleted() -> None:
+    setup = unconfirmed("mailman", MAY)
+    assert isinstance(setup.fake, Unconfirmed)
+    setup.fake.done, setup.fake.hidden = (1,), (2,)
+
+    report = await setup.delete(1, 2, 3)
+
+    assert outcomes(report) == [(1, "unknown"), (2, "unknown"), (3, "still_there")]
+    assert report.message == (
+        "0 of 3 records were seen to be deleted. Still there: 3. Not known: 1, 2. "
+        + HIDDEN_SAID.format("1, 2")
+    )
+    assert setup.left() == [2, 3]
+
+
+@pytest.mark.decision("decision-107")
+async def test_without_an_answer_a_superuser_sees_what_is_gone() -> None:
+    setup = unconfirmed()
+    assert isinstance(setup.fake, Unconfirmed)
+    setup.fake.done, setup.fake.hidden = (1,), (2,)
+
+    report = await setup.delete(1, 2)
+
+    assert outcomes(report) == [(1, "deleted"), (2, "still_there")]
+    assert "deleted or hidden" not in report.message
+
+
+@pytest.mark.decision("decision-107")
+@pytest.mark.parametrize(
+    "after",
+    [
+        None,
+        SignedIn(id=2, is_superuser=False),
+        UpstreamTimeout("late"),
+        UpstreamUnavailable("slow down", status=429),
+    ],
+)
+async def test_who_is_no_superuser_any_more_or_not_known_to_be_one_has_seen_nothing(
+    after: SignedIn | PaperlessMcpError | None,
+) -> None:
+    setup = unconfirmed()
+    assert isinstance(setup.fake, Unconfirmed)
+    setup.fake.done, setup.fake.after, setup.fake.changed = (1,), after, True
+
+    report = await setup.delete(1)
+
+    assert outcomes(report) == [(1, "unknown")]
+    assert report.message == (
+        "0 of 1 record was seen to be deleted. Not known: 1. " + HIDDEN_SAID.format("1")
+    )
+
+
+@pytest.mark.decision("decision-107")
+async def test_who_became_a_superuser_meanwhile_may_have_been_shown_less() -> None:
+    setup = unconfirmed("mailman", MAY)
+    assert isinstance(setup.fake, Unconfirmed)
+    setup.fake.done, setup.fake.changed = (1,), True
+    setup.fake.after = SignedIn(id=77, is_superuser=True)
+
+    assert outcomes(await setup.delete(1)) == [(1, "unknown")]
+
+
+@pytest.mark.decision("decision-107")
+async def test_after_the_time_of_the_call_who_is_signed_in_is_not_asked_for() -> None:
+    setup = Setup()
+    setup.rule()
+    failed_mails(setup)
+
+    @final
+    class Late(FakePaperless):
+        sent: bool = False
+        looked: bool = False
+
+        @override
+        async def delete_processed_mail(self, mail_ids: Sequence[int]) -> None:
+            self.sent = True
+            self.state.processed_mail.clear()
+            message = "Paperless did not respond in time."
+            raise UpstreamTimeout(message)
+
+        @override
+        async def get_processed_mail(self, mail_id: int) -> ProcessedMail:
+            setup.now += 40 if self.sent else 0
+            return await super().get_processed_mail(mail_id)
+
+        @override
+        async def get_signed_in(self) -> SignedIn | None:
+            assert not self.sent
+            return await super().get_signed_in()
+
+    fake = Late(setup.state, user=ADMIN[0])
+    service = ProcessedMailService(fake, fake, fake, clock=lambda: setup.now)
+
+    report = await service.delete([1], dry_run=False, confirm=True)
+
+    assert outcomes(report) == [(1, "unknown")]
+
+
+@pytest.mark.decision("decision-107")
+async def test_a_confirmed_deletion_is_seen_by_everybody_without_asking_who_it_is() -> None:
+    """Paperless deletes all the ids it finds, or answers 403: no hidden record is left."""
+
+    @final
+    class Confirmed(FakePaperless):
+        asked: int = 0
+
+        @override
+        async def get_signed_in(self) -> SignedIn | None:
+            self.asked += 1
+            return await super().get_signed_in()
+
+    setup = Setup("mailman", permissions=MAY, make=Confirmed, writes=True)
+    setup.rule(owner=None)
+    setup.mail(status="FAILED", owner=None)
+
+    assert outcomes(await setup.delete(1)) == [(1, "deleted")]
+    assert isinstance(setup.fake, Confirmed)
+    assert setup.fake.asked == 1
+
+
+@pytest.mark.decision("decision-107")
+async def test_after_a_rate_limit_who_is_signed_in_is_not_asked_for() -> None:
+    @final
+    class Limited(FakePaperless):
+        sent: bool = False
+
+        @override
+        async def delete_processed_mail(self, mail_ids: Sequence[int]) -> None:
+            self.sent = True
+            self.state.processed_mail.clear()
+            message = "Paperless did not respond in time."
+            raise UpstreamTimeout(message)
+
+        @override
+        async def get_processed_mail(self, mail_id: int) -> ProcessedMail:
+            if self.sent and mail_id == 2:
+                message = "slow down"
+                raise UpstreamUnavailable(message, status=429)
+            return await super().get_processed_mail(mail_id)
+
+        @override
+        async def get_signed_in(self) -> SignedIn | None:
+            assert not self.sent
+            return await super().get_signed_in()
+
+    setup = Setup(make=Limited)
+    setup.rule()
+    failed_mails(setup, 2)
+
+    report = await setup.delete(1, 2)
+
+    assert outcomes(report) == [(1, "unknown"), (2, "unknown")]
+    assert "deleted or hidden: 1." in report.message

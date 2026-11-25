@@ -111,6 +111,32 @@ async def test_a_deletion_whose_answer_is_lost_is_read_back_and_not_repeated(
     assert [await gone(backend, r.id) for r in rows] == [True, True]
 
 
+@pytest.mark.decision("decision-107")
+async def test_an_ordinary_user_is_not_told_that_a_record_is_gone_without_an_answer(
+    backend: Backend, mail: Mail
+) -> None:
+    """It may be hidden: the same calls say deleted where Paperless answered."""
+    rows = await made(backend, mail, *((subject, "1", "FAILED", None) for subject in "abc"))
+    lost, answered = rows[:2], rows[2]
+    user = backend.restricted(
+        frozenset({"view_processedmail", "delete_processedmail", "view_uisettings"}), limited=True
+    )
+
+    told = await output(user, DELETE, mail_ids=[answered.id], confirm=True)
+    backend.rate_limit.lost = DELETION
+    done = await output(user, DELETE, mail_ids=[r.id for r in lost], confirm=True)
+
+    assert outcomes(told) == ["deleted"]
+    assert outcomes(done) == ["unknown", "unknown"]
+    message = str(done["message"])
+    numbers = f"{lost[0].id}, {lost[1].id}"
+    assert message.startswith("0 of 2 records were seen to be deleted. ")
+    assert f"Not visible to you any more, so deleted or hidden: {numbers}." in message
+    assert "Paperless did not confirm the deletion: " in message
+    assert message.endswith(NOT_REPEATED)
+    assert [await gone(backend, r.id) for r in rows] == [True, True, True]
+
+
 async def test_records_that_cannot_be_read_again_are_unknown_and_nothing_more_is_asked(
     backend: Backend, mail: Mail
 ) -> None:

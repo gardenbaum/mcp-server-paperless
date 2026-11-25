@@ -9,10 +9,12 @@ import httpx2
 import pytest
 from pydantic import SecretStr
 
+from adapter.conftest import streaming
 from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
+    UnexpectedAnswer,
     UpstreamUnavailable,
     Validation,
 )
@@ -457,6 +459,28 @@ async def test_records_are_deleted_by_one_request_whose_echo_is_not_read(
 
     assert await PaperlessMailWriter(make_client(server)).delete_processed_mail([9, 10]) is None
     assert server.sent == [("POST", "/api/processed_mail/bulk_delete/", {"mail_ids": [9, 10]}, {})]
+
+
+@pytest.mark.decision("decision-107")
+@pytest.mark.parametrize(
+    "answer",
+    [
+        httpx2.Response(200, text="<html>Sign in</html>"),
+        httpx2.Response(200),
+        ok({"deleted_mail_ids": [9]}),
+        ok({"result": "PARTIAL", "deleted_mail_ids": [9]}),
+    ],
+)
+async def test_only_the_answer_paperless_gives_confirms_a_deletion(
+    answer: httpx2.Response,
+) -> None:
+    server = Recording(answer)
+    client, _ = streaming(server)  # these answers are not those of the schema
+
+    with pytest.raises(UnexpectedAnswer):
+        await PaperlessMailWriter(client).delete_processed_mail([9])
+
+    assert len(server.sent) == 1
 
 
 @pytest.mark.decision("decision-83")
