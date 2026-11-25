@@ -2,7 +2,7 @@
 
 <!-- Generated from the tool surface by `just docs-tools`. Do not edit by hand. -->
 
-104 tools in 14 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
+107 tools in 14 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
 default; the others are switched on with
 [`PAPERLESS_MCP_TOOLSETS`](configuration.md#toolsets), which also says what each toolset is for.
 
@@ -90,6 +90,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | `delete_mail_rule` | destructive, confirm | Delete a mail rule and the records of the mail it processed. |
 | `list_processed_mail` | read | List the mails Paperless handled, as compact rows. |
 | `get_processed_mail` | read | Read one mail Paperless handled, with its whole error. |
+| `explain_mail_import` | read | Explain why a mail was not imported, from settings, processed mail, tasks and logs. |
 | `delete_processed_mail` | destructive, confirm, dry run | Delete records of processed mail, so that Paperless can fetch those mails again. |
 
 ## `pdf`
@@ -111,7 +112,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 
 | Tool | Kind | What it does |
 |---|---|---|
-| `set_permissions` | destructive, confirm | Share documents, taxonomy objects, mail accounts or mail rules, or hand them over. |
+| `set_permissions` | destructive, confirm | Share documents, taxonomy objects, saved views, mail accounts or rules, or hand them over. |
 | `list_users` | read | List Paperless users as compact rows: id, username, name, active, superuser, group ids. |
 | `list_groups` | read | List Paperless user groups as compact rows: id and name. |
 
@@ -169,9 +170,10 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | Tool | Kind | What it does |
 |---|---|---|
 | `list_saved_views` | read | List the saved views the current user may see, with their filter rules. |
-| `get_saved_view` | read | Read one saved view with its filter rules, sort order and display settings. |
+| `get_saved_view` | read | Read one saved view with its filter rules, sort order, display settings, owner and grants. |
 | `create_saved_view` | write | Create a saved view: a named document filter that run_saved_view can run. |
 | `update_saved_view` | write | Change a saved view; only the settings you name change. |
+| `pin_saved_view` | write | Show a saved view on the dashboard or in the sidebar of the web UI, or take it away. |
 | `delete_saved_view` | destructive, confirm | Delete a saved view for good: it has no trash. |
 
 ## `workflows`
@@ -182,6 +184,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | `get_workflow` | read | Read one workflow with its triggers and actions, as list_workflows shows it. |
 | `create_workflow` | write, confirm | Create a workflow with its triggers and actions. |
 | `update_workflow` | write, confirm | Change a workflow; only the settings you name change. |
+| `explain_workflow` | read | Explain why a workflow ran on a document, or did not, as far as stored facts tell. |
 | `update_workflow_part` | destructive, confirm | Add, change or remove one trigger or action of a workflow; the others stay as they are. |
 | `delete_workflow` | destructive, confirm | Delete a workflow for good: it has no trash. |
 | `run_workflow` | destructive, confirm, dry run | Run a workflow with a manual trigger by hand on chosen documents, at most 100 per call. |

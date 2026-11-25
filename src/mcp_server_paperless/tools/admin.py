@@ -32,8 +32,8 @@ from mcp_server_paperless.domain.admin import (
 from mcp_server_paperless.domain.documents import NameOrId
 from mcp_server_paperless.services.admin_system import (
     DEFAULT_LOG_LINES,
-    MAX_LOG_LINES,
 )
+from mcp_server_paperless.services.log_records import MAX_LOG_LINES
 from mcp_server_paperless.tools._shared import ANNOTATIONS, Confirm, boundary, services
 
 TOOLSET = "admin"

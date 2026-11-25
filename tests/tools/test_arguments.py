@@ -511,6 +511,12 @@ async def test_permissions_and_bulk_changes_take_every_argument() -> None:
         await sweep(
             "set_permissions", {"kind": kind, "items": [1], "clear_owner": True}, (), prepare=owned
         )
+    for change in (
+        {"owner": "e2e-reader", "view_users": ["e2e-reader"], "view_groups": ["e2e-group"]},
+        {"change_users": ["e2e-reader"], "change_groups": [1], "mode": "replace"},
+        {"clear_owner": True},
+    ):
+        await sweep("set_permissions", {"kind": "saved_view", "items": [1], **change}, ())
     for kind in ("mail_account", "mail_rule"):
         grants = {"view_users": ["admin"], "change_groups": [1], "owner": "e2e-reader"}
         await sweep(
@@ -762,6 +768,23 @@ async def test_mail_takes_every_argument() -> None:
     await sweep("process_mail_account", {"account_id": 1}, (), prepare=with_mail)
     await sweep("list_processed_mail", {}, ("ordering",))
     await sweep(
+        "explain_mail_import",
+        {
+            "account_id": 1,
+            "rule_id": 1,
+            "sender": "a",
+            "recipient": "b",
+            "subject": "Invoice",
+            "received": "2026-11-25T10:00:00Z",
+            "folder": "INBOX",
+            "attachment_names": ["a.pdf"],
+            "is_read": True,
+            "is_flagged": False,
+        },
+        (),
+        prepare=with_processed_mail,
+    )
+    await sweep(
         "get_processed_mail", {"mail_id": 1, "error_from": 0}, (), prepare=with_processed_mail
     )
     assert not FAILED, "\n".join(FAILED)
@@ -916,6 +939,7 @@ async def test_workflows_take_every_trigger_and_action_with_every_setting() -> N
         )
     await sweep("get_workflow", {"workflow": 1}, (), prepare=with_workflow)
     await sweep("list_workflows", {}, (), prepare=with_workflow)
+    await sweep("explain_workflow", {"workflow": 1, "document_id": 1}, (), prepare=with_workflow)
     await sweep("get_workflow", {"trigger_id": 1}, (), prepare=with_workflow)
     await sweep("get_workflow", {"action_id": 2}, (), prepare=with_workflow)
     for enabled in (True, False):
@@ -1048,6 +1072,8 @@ async def test_saved_views_take_every_rule_type_and_are_run() -> None:
     await sweep("update_saved_view", cleared, ())
     await sweep("list_saved_views", {}, ())
     await sweep("get_saved_view", {"view": 1}, ())
+    for pinned in ({"dashboard": True}, {"sidebar": True}, {"dashboard": True, "sidebar": False}):
+        await sweep("pin_saved_view", {"view": 1, **pinned}, ())
     await sweep("delete_saved_view", {"view": 1}, ())
     assert not FAILED, "\n".join(FAILED)
 

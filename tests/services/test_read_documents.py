@@ -27,6 +27,7 @@ from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.read_documents import DEFAULT_FIELDS, ReadDocuments
 from mcp_server_paperless.services.selection import SELECT_BYTES, DocumentSelector
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.view_pins import ViewPins
 from mcp_server_paperless.services.views import ViewService
 
 if TYPE_CHECKING:
@@ -99,7 +100,14 @@ class Setup:
         self.fake: Reading = Reading(self.state, user=user)
         taxonomy = TaxonomyResolver(self.fake, StaticTokenProvider("t"), ttl=3600.0)
         documents = DocumentService(self.fake, self.fake, taxonomy, web_url=WEB)
-        views = ViewService(self.fake, self.fake, taxonomy, documents)
+        views = ViewService(
+            self.fake,
+            self.fake,
+            taxonomy,
+            documents,
+            ViewPins(self.fake, self.fake),
+            permissions=self.fake,
+        )
         self.service: ReadDocuments = ReadDocuments(
             self.fake,
             DocumentSelector(self.fake, documents, views, taxonomy),

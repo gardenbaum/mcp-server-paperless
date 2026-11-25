@@ -23,6 +23,7 @@ from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.selection import SELECT_BYTES, DocumentSelector
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.view_pins import ViewPins
 from mcp_server_paperless.services.views import ViewService
 
 if TYPE_CHECKING:
@@ -68,7 +69,14 @@ class Setup:
         self.fake: Counting = Counting(self.state, user=user)
         taxonomy = TaxonomyResolver(self.fake, StaticTokenProvider("t"), ttl=3600.0)
         documents = DocumentService(self.fake, self.fake, taxonomy, web_url="https://p.example")
-        views = ViewService(self.fake, self.fake, taxonomy, documents)
+        views = ViewService(
+            self.fake,
+            self.fake,
+            taxonomy,
+            documents,
+            ViewPins(self.fake, self.fake),
+            permissions=self.fake,
+        )
         self.selector: DocumentSelector = DocumentSelector(self.fake, documents, views, taxonomy)
 
     def add(self, number: int, title: str = "scratch", **values: object) -> None:
