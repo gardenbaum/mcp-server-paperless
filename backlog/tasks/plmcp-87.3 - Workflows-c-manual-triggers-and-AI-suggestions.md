@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:06Z'
-updated_date: '2026-11-25T08:25:23Z'
+updated_date: '2026-11-25T09:19:48Z'
 labels:
   - workflows
 dependencies:
@@ -26,7 +26,7 @@ Third part of PLMCP-87: run_workflow runs manual triggers, but only the web UI c
 <!-- AC:BEGIN -->
 - [x] #1 Manual triggers and the action applying AI suggestions can be created and changed, the latter confirmed while enabled
 - [x] #2 Password removal stays with the web UI and is recorded as an owner-approved exclusion
-- [ ] #3 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover both types
+- [x] #3 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover both types
 <!-- AC:END -->
 
 ## Definition of Done
@@ -49,4 +49,6 @@ Third part of PLMCP-87: run_workflow runs manual triggers, but only the web UI c
 
 <!-- SECTION:NOTES:BEGIN -->
 Owner approval (2026-11-24): 'Alle wie empfohlen' (question quoted in decision-81), here 4a and 5a. Implemented on plmcp-87-3-types (PR #160, stacked on #159), decision-86 (created by the CLI in a copy of backlog/, 83 is taken elsewhere). Red first at domain, service, contract (fake); tool and E2E tests written with them. 12 hand mutants, all killed. Full hosted E2E 45576104128 on f7bbcbe dispatched; AC 3 waits for it.
+
+Full hosted E2E 45578885550 on f238efc green (contract 35, e2e 10, parts 6 of the workflow modules). After it only README numbers, the backlog archive of main and this note changed.
 <!-- SECTION:NOTES:END -->
