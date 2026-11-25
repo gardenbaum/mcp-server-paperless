@@ -222,6 +222,42 @@ class ReadRow(BaseModel):
     ] = None
 
 
+# The kinds of objects a selection is counted by.
+type CountedKind = Literal["tag", "correspondent", "document_type", "storage_path", "custom_field"]
+
+
+class Counted(BaseModel):
+    """An object and how many of the chosen documents have it."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    name: str
+    documents: int
+
+
+class KindCounts(BaseModel):
+    """The objects of one kind the chosen documents have, most frequent first."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    items: tuple[Counted, ...] = ()
+    more: Annotated[int, Field(description="Objects left out: no room.")] = 0
+    hidden: Annotated[int, Field(description="Objects the user may not see.")] = 0
+
+
+class SelectionCounts(BaseModel):
+    """What the chosen documents have, counted."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    tags: KindCounts = KindCounts()
+    correspondents: KindCounts = KindCounts()
+    document_types: KindCounts = KindCounts()
+    storage_paths: KindCounts = KindCounts()
+    custom_fields: KindCounts = KindCounts()
+
+
 class DocumentsRead(BaseModel):
     """Many documents read at once, and what of the selection is not in the answer."""
 
@@ -268,4 +304,8 @@ class DocumentsRead(BaseModel):
         tuple[int, ...],
         Field(description="Shown without text: it could not be read in this call, see notices."),
     ] = ()
+    counts: Annotated[
+        SelectionCounts | None,
+        Field(exclude_if=_nothing, description="With counts: of the whole selection."),
+    ] = None
     notices: tuple[str, ...] = ()

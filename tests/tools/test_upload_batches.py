@@ -136,6 +136,8 @@ async def test_bulk_is_whole_in_every_mode(tmp_path: Path) -> None:
     assert entries[0]["what"] == entries[1]["what"] != "some of its tools"
     shared = [
         "read_documents",
+        "suggest_words",
+        "test_storage_path",
         "bulk_edit_documents",
         "update_documents",
         "add_notes",

@@ -105,6 +105,10 @@ class InstanceOverview(_Frozen):
             )
         ),
     ]
+    next_asn: Annotated[
+        int | None,
+        Field(description="Highest archive serial number + 1 (no trash)."),
+    ]
 
 
 class FileTypeCount(_Frozen):
@@ -234,6 +238,7 @@ class ServerOverview(InstanceOverview):
             system_status=overview.system_status,
             current_user=overview.current_user,
             ai_enabled=overview.ai_enabled,
+            next_asn=overview.next_asn,
             too_old=update_notice(overview.paperless_version),
             toolsets=toolsets,
         )

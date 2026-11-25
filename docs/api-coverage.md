@@ -47,19 +47,19 @@ Limits.
 | `GET /api/config/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `PATCH /api/config/{id}/` | `update_app_config` |  |
 | `PUT /api/config/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
-| `GET /api/correspondents/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 14 more |  |
+| `GET /api/correspondents/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 15 more |  |
 | `POST /api/correspondents/` | `create_taxonomy_item` |  |
 | `DELETE /api/correspondents/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/correspondents/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/correspondents/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/correspondents/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
-| `GET /api/custom_fields/` | `bulk_edit_documents`, `create_saved_view`, `create_workflow`, `delete_taxonomy_item`, `get_document` and 11 more |  |
+| `GET /api/custom_fields/` | `bulk_edit_documents`, `create_saved_view`, `create_workflow`, `delete_taxonomy_item`, `get_document` and 12 more |  |
 | `POST /api/custom_fields/` | `create_taxonomy_item` |  |
 | `DELETE /api/custom_fields/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/custom_fields/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/custom_fields/{id}/` | `update_taxonomy_item` |  |
 | `PUT /api/custom_fields/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
-| `GET /api/document_types/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 14 more |  |
+| `GET /api/document_types/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 15 more |  |
 | `POST /api/document_types/` | `create_taxonomy_item` |  |
 | `DELETE /api/document_types/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/document_types/{id}/` | `update_taxonomy_item` |  |
@@ -74,14 +74,14 @@ Limits.
 | `POST /api/documents/email/` | `email_documents` |  |
 | `POST /api/documents/merge/` | `merge_documents` |  |
 | `POST /api/documents/merge_as_versions/` | `merge_documents_as_versions`, `resolve_duplicates` |  |
-| `GET /api/documents/next_asn/` |  | PLMCP-83 |
+| `GET /api/documents/next_asn/` | `get_instance_overview` |  |
 | `POST /api/documents/post_document/` | `insert_pages`, `upload_document`, `upload_documents` |  |
 | `POST /api/documents/remove_password/` | `remove_document_password` |  |
 | `POST /api/documents/reprocess/` | `bulk_edit_documents`, `reprocess_documents` |  |
 | `POST /api/documents/rotate/` | `rotate_documents` |  |
-| `POST /api/documents/selection_data/` |  | PLMCP-83 |
+| `POST /api/documents/selection_data/` | `read_documents` |  |
 | `DELETE /api/documents/{id}/` | `delete_document` |  |
-| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 23 more |  |
+| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 24 more |  |
 | `PATCH /api/documents/{id}/` | `correct_document_text`, `extract_pages`, `set_permissions`, `split_document`, `update_document` and 1 more |  |
 | `PUT /api/documents/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `GET /api/documents/{id}/ai_suggestions/` | `get_ai_suggestions` |  |
@@ -142,7 +142,7 @@ Limits.
 | `PATCH /api/saved_views/{id}/` | `set_permissions`, `update_saved_view` |  |
 | `PUT /api/saved_views/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-91 - Saved-views-display-settings-are-checked-here-grants-go-through-set_permissions-PUT-and-list-options-stay-out.md) |
 | `GET /api/search/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
-| `GET /api/search/autocomplete/` |  | PLMCP-83 |
+| `GET /api/search/autocomplete/` | `suggest_words` |  |
 | `GET /api/share_link_bundles/` | `list_share_bundles` |  |
 | `POST /api/share_link_bundles/` | `create_share_bundle` |  |
 | `DELETE /api/share_link_bundles/{id}/` | `delete_share_bundle` |  |
@@ -154,14 +154,14 @@ Limits.
 | `GET /api/share_links/{id}/` | `delete_share_link` |  |
 | `GET /api/statistics/` | `get_instance_overview`, `get_system_report` |  |
 | `GET /api/status/` | `get_instance_overview`, `get_system_report` |  |
-| `GET /api/storage_paths/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_workflow`, `delete_taxonomy_item`, `get_document` and 12 more |  |
+| `GET /api/storage_paths/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_workflow`, `delete_taxonomy_item`, `get_document` and 13 more |  |
 | `POST /api/storage_paths/` | `create_taxonomy_item` |  |
-| `POST /api/storage_paths/test/` |  | PLMCP-83 |
+| `POST /api/storage_paths/test/` | `test_storage_path` |  |
 | `DELETE /api/storage_paths/{id}/` | `delete_taxonomy_item` |  |
-| `GET /api/storage_paths/{id}/` | `update_taxonomy_item` |  |
+| `GET /api/storage_paths/{id}/` | `test_storage_path`, `update_taxonomy_item` |  |
 | `PATCH /api/storage_paths/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/storage_paths/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
-| `GET /api/tags/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_taxonomy_item`, `delete_taxonomy_item` and 16 more |  |
+| `GET /api/tags/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_taxonomy_item`, `delete_taxonomy_item` and 17 more |  |
 | `POST /api/tags/` | `create_taxonomy_item`, `update_document`, `update_documents` |  |
 | `DELETE /api/tags/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/tags/{id}/` | `update_taxonomy_item` |  |
@@ -247,6 +247,7 @@ TOML file.
 | `POST /api/documents/reprocess/` | `body:from_webui` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `POST /api/documents/rotate/` | `body:all`, `body:excluded_documents`, `body:filters` | excluded, "Bitte alles wie von dir empfohlen umsetzen." (2026-11-24, backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-run-name-the-version-they-read-and-leave-selections-by-filter-out.md) |
 | `POST /api/documents/rotate/` | `body:from_webui` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
+| `POST /api/documents/selection_data/` | `body:all`, `body:excluded_documents`, `body:filters` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `GET /api/documents/{id}/` | `query:full_perms` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `PATCH /api/documents/{id}/` | `body:created_date`, `body:remove_inbox_tags` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `GET /api/documents/{id}/download/` | `query:follow_formatting` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |

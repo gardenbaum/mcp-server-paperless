@@ -150,7 +150,17 @@ class Credentials:
         )
 
 
-class PerCredential:
+class ListingOnly:
+    """A TaxonomyReader of which only the lists are read."""
+
+    async def get_storage_path_template(self, item_id: int) -> str:
+        raise AssertionError(item_id)
+
+    async def render_storage_path(self, document_id: int, template: str) -> str | None:
+        raise AssertionError(document_id, template)
+
+
+class PerCredential(ListingOnly):
     """A TaxonomyReader that answers as the fake of the current credential and counts loads."""
 
     def __init__(self, credentials: Credentials, fakes: dict[str, FakePaperless]) -> None:
@@ -322,7 +332,7 @@ def test_at_most_five_names_are_suggested_joined_by_commas() -> None:
     assert re.fullmatch(pattern, raised.value.hint or "")
 
 
-class Denying:
+class Denying(ListingOnly):
     """A TaxonomyReader whose permission error carries a hint."""
 
     async def list_taxonomy(self, kind: TaxonomyKind) -> list[TaxonomyItem]:

@@ -100,7 +100,7 @@ TASKS = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "tasks"}
 READ_TASKS = {"list_tasks", "get_task_overview", "get_system_report"}
 RAW = {"paperless_api_get"}
 READ_PDF = {"inspect_pdf"}
-READ_BULK = {"read_documents"}
+READ_BULK = {"read_documents", "suggest_words", "test_storage_path"}
 READ_MAIL = {
     *("list_mail_accounts", "get_mail_account", "list_mail_rules", "get_mail_rule"),
     "list_processed_mail",

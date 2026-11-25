@@ -83,7 +83,7 @@ if TYPE_CHECKING:
         UserPage,
     )
     from mcp_server_paperless.domain.raw import RawReply
-    from mcp_server_paperless.domain.selection import DocumentRow, ReadField
+    from mcp_server_paperless.domain.selection import CountedKind, DocumentRow, ReadField
     from mcp_server_paperless.domain.sharing import FileVersionKind, ShareBundle, ShareLink
     from mcp_server_paperless.domain.task_lists import (
         RunnableTask,
@@ -150,6 +150,30 @@ class TaxonomyReader(Protocol):
         """
         ...
 
+    async def get_storage_path_template(self, item_id: int) -> str:
+        """The stored template of a storage path.
+
+        Raises:
+            NotFound: No such storage path, or the user may not see it.
+            PermissionDenied: The user may not view storage paths.
+        """
+        ...
+
+    async def render_storage_path(self, document_id: int, template: str) -> str | None:
+        """The path ``template`` gives the file of the document; nothing is changed.
+
+        None: the template cannot be rendered for the document, or the path would be unsafe. Empty:
+        it renders to nothing. The old style (``{title}``) is not converted.
+
+        Raises:
+            Validation: No such document, or the user may not see it, or the template is blank.
+            AnswerTooLarge: The path is larger than 64 KiB; it is not read to its end.
+            UpstreamUnavailable: Paperless failed; with status 500 on this template (a path that is
+                only a dot does that).
+            PermissionDenied: The user may not view documents.
+        """
+        ...
+
 
 class DocumentReader(Protocol):
     """Documents the current user may see."""
@@ -177,6 +201,29 @@ class DocumentReader(Protocol):
             Validation: Paperless rejected the query.
             AnswerTooLarge: The answer is larger than ``max_bytes``.
             AnswerCompressed: The answer was compressed, so its size is not known.
+        """
+        ...
+
+    async def count_selection(
+        self, document_ids: Sequence[int]
+    ) -> Mapping[CountedKind, Mapping[int, int]]:
+        """How many of the documents have each object, by kind and id, hidden objects too.
+
+        Objects none of them has are left out.
+
+        Raises:
+            Validation: A document does not exist or is named twice.
+            PermissionDenied: The user may not view documents, or one of these.
+        """
+        ...
+
+    async def suggest_words(self, term: str, limit: int) -> tuple[str, ...]:
+        """At most ``limit`` words of the search index that begin with ``term``.
+
+        Most frequent first, lower case and without accents, from documents the user sees.
+
+        Raises:
+            PermissionDenied: The user may not view documents.
         """
         ...
 

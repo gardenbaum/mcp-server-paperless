@@ -128,6 +128,7 @@ def instance(**overrides: httpx2.Response) -> dict[str, httpx2.Response]:
         "/api/statistics/": httpx2.Response(200, json=STATISTICS),
         "/api/status/": httpx2.Response(200, json=STATUS),
         "/api/ui_settings/": httpx2.Response(200, json=UI_SETTINGS),
+        "/api/documents/next_asn/": httpx2.Response(200, json=11),
     }
     responses.update({f"/api/{name}/": response for name, response in overrides.items()})
     return responses
@@ -177,7 +178,21 @@ async def test_maps_the_overview_of_a_superuser(make_client: ClientFactory) -> N
         ),
         current_user=CurrentUser(id=2, username="admin", is_superuser=True),
         ai_enabled=False,
+        next_asn=11,
     )
+
+
+@pytest.mark.decision("decision-101")
+async def test_a_user_who_may_not_view_documents_gets_no_next_number(
+    make_client: ClientFactory,
+) -> None:
+    responses = instance()
+    responses["/api/documents/next_asn/"] = UI_SETTINGS_FORBIDDEN
+
+    overview = await reader(make_client, responses).get_overview()
+
+    assert overview.next_asn is None
+    assert overview.current_user is not None
 
 
 async def test_a_user_without_status_permission_gets_no_system_status(

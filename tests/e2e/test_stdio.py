@@ -111,6 +111,7 @@ async def test_the_environment_selects_the_tools_over_stdio(stack: Stack) -> Non
     admin = {
         *("get_user", "get_group", "get_app_config", "list_tasks", "list_logs", "get_log"),
         *("bulk_download", "inspect_pdf", "read_documents"),
+        *("suggest_words", "test_storage_path"),
         *("get_task_overview", "get_system_report"),
     }
     listings |= mail | admin | {"paperless_api_get"}
