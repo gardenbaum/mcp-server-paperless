@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:53Z'
-updated_date: '2026-11-25T16:06:33Z'
+updated_date: '2026-11-25T17:39:28Z'
 labels:
   - mail
 dependencies: []
@@ -62,4 +62,6 @@ Owner, 2026-11-25: 'Überall wie von dir empfohlen bitte.' (everywhere as you re
 Cleanup 2026-11-25, merged as 99e01fa (#155). AC 4 stays open: decision-80 (consequences) says that a log line a server forges to look like the start of a record, in its answer to a login (carriage return, untagged BYE), is not told from a real one, so such an answer can still be shown. Missing: the owner's explicit word that this residual meets 'in no result, error or log line' (the recorded approval of 2026-11-25 is about hiding more), or code and a test that hide it. The other criteria: tests/services/test_processed_mail.py, tests/tools/test_mail.py, tests/contract/test_mail.py (fake and 3.5.1), docs/api-coverage.toml. CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 1 stays open: the PR records red runs for the domain to tool levels, not for the live contract and E2E tests. DoD 2 stays open: no local run of the whole just check is recorded. On GitHub the check jobs run its recipes one by one: 45575809989 (007bdcb).
 
 AC 4 reworded by the owner, 2026-11-26: "Alles wie von dir empfohlen." (everything as you recommend), to the question whether the start of a log record is tightened and AC 4 says the answer to a failed login is in no result, error or log line, except where a hostile server forges the start of a log record or repeats it outside the login. decision-106 supplements decision-80 and names the two holes. The order of the criteria is kept.
+
+Full E2E 45654754686 was red for AUTHENTICATE PLAIN: the echo server answered it with a BYE, whose text imaplib loses (socket error: EOF). The server now answers AUTHENTICATE with a tagged NO, or a BYE and a tagged answer; the cases that passed on the text of others now need their own. decision-108 supersedes that wording of decisions 106 and 80. No product change.
 <!-- SECTION:NOTES:END -->
