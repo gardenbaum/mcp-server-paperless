@@ -1253,6 +1253,22 @@ async def test_the_other_settings_of_a_token_account_are_changed() -> None:
 
 
 @pytest.mark.decision("decision-79")
+async def test_an_account_that_becomes_a_token_account_is_asked_for_again() -> None:
+    setup = Setup(writes=False)
+    number = setup.account()
+
+    async def asked() -> str:
+        with pytest.raises(ConfirmationRequired) as raised:
+            _ = await setup.service.delete_account(number, confirm=False)
+        return raised.value.fingerprint
+
+    before = await asked()
+    setup.state.mail_accounts[0].is_token = True
+
+    assert await asked() != before
+
+
+@pytest.mark.decision("decision-79")
 async def test_moving_a_token_account_says_that_its_access_token_goes_there() -> None:
     setup = Setup(writes=False)
     number = token_account(setup)

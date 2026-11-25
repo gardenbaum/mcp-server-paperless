@@ -41,11 +41,17 @@ ANSWER_NOT_SHOWN: Final = "(answer of the mail server not shown)"
 REST_NOT_SHOWN: Final = "(rest of a log record not shown)"
 # In the traceback of a login that failed: its frame, and an error that quotes the server.
 _LOGIN: Final = re.compile(r", in mailbox_login$", flags=re.MULTILINE)
-_MAIL_ERROR: Final = re.compile(r"^ *(?:imaplib|imap_tools)\.[\w.]+: ", flags=re.MULTILINE)
-# What Paperless logs of a failed login, up to the name of the account; a colon and the answer come.
-_LOGGED: Final = re.compile(
-    r"^(?:\[[^\n]*\] )?Error while authenticating account ", flags=re.MULTILINE
+_MAIL_ERROR: Final = re.compile(
+    r"^ *(?:imaplib|imap_tools)\.[\w.]+:(?: |(?=\s)|\Z)", flags=re.MULTILINE
 )
+# What Paperless logs of a login that failed, or of the end of the connection after it, up to the
+# name of the account, and the colon before the answer. A line of a log that is read has lost what
+# is blank at its end.
+_LOGGED: Final = re.compile(
+    r"^(?:\[[^\n]*\] )?Error while (?:authenticating account|retrieving mailbox) ",
+    flags=re.MULTILINE,
+)
+_ANSWER: Final = re.compile(r":(?: |(?=\s)|\Z)")
 
 
 def without_credentials(url: str) -> str | None:
@@ -116,14 +122,14 @@ def _without_answers(text: str) -> str:
     All goes from the answer on, line by line: nothing tells for sure where an answer ends.
     """
     logged = _LOGGED.search(text)
-    answer = -1 if logged is None else text.find(": ", logged.end())
-    starts = [answer + 2] if answer >= 0 else []
+    answer = _ANSWER.search(text, logged.end()) if logged else None
+    starts = [answer.end()] if answer else []
     if _LOGIN.search(text) and (error := _MAIL_ERROR.search(text)):
         starts.append(error.end())
     if not starts:
         return text
     start = min(starts)
-    end = len(text.rstrip("\n"))
+    end = max(start, len(text.rstrip("\n")))
     lines = text.count("\n", start, end) + 1
     return text[:start] + "\n".join([ANSWER_NOT_SHOWN] * lines) + text[end:]
 
