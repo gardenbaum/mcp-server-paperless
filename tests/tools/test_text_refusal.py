@@ -386,3 +386,61 @@ def test_what_the_sdk_rejects_is_refused_or_dropped_over_stdio_and_never_run(
     assert "bytes" in wire.seen
     assert note_of(fine)["id"] == 2  # the first is of the seed
     assert asked(tmp_path) == ["CALLS add_note"]
+
+
+HOLD = """
+import sys
+from fastmcp import Context, FastMCP
+from mcp_server_paperless.cli import run_stdio
+server = FastMCP("holding")
+
+@server.tool
+async def hold(ctx: Context) -> str:
+    answer = await ctx.elicit("go on?", None)
+    return answer.action
+
+run_stdio(server)
+"""
+
+
+@pytest.mark.decision("decision-110")
+def test_what_the_sdk_rejects_resolves_no_question_over_stdio() -> None:
+    """With an error beside the method, the refused line was the answer to a pending question."""
+    start = cast("Json", START["params"])
+    hello = {**START, "params": {**start, "capabilities": {"elicitation": {}}}}
+    with subprocess.Popen(  # noqa: S603 -- this interpreter and a script of this file
+        [sys.executable, "-c", HOLD],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    ) as process:
+        limit = threading.Timer(60, process.kill)
+        limit.start()
+        try:
+            wire = Wire(process)
+            _ = wire.ask(hello)
+            wire.send(b'{"jsonrpc": "2.0", "method": "notifications/initialized"}')
+            call: Json = {"jsonrpc": "2.0", "id": "held", "method": "tools/call"}
+            wire.send(json.dumps({**call, "params": {"name": "hold", "arguments": {}}}).encode())
+            assert process.stdout
+            question: Json = {}
+            while question.get("method") != "elicitation/create":
+                question = cast("Json", json.loads(process.stdout.readline()))
+            hybrid: Json = {"jsonrpc": "2.0", "id": question["id"], "x": BAD}
+            for more in (
+                {"method": "x", "params": {}, "error": {"code": 1, "message": "boo"}},
+                {"method": "x", "params": {}, "result": {"action": "cancel"}},
+            ):
+                wire.send(json.dumps({**hybrid, **more}).encode())
+            answer: Json = {"jsonrpc": "2.0", "id": question["id"]}
+            wire.send(json.dumps({**answer, "result": {"action": "decline"}}).encode())
+            told: Json = {}
+            while told.get("id") != "held":
+                told = cast("Json", json.loads(process.stdout.readline()))
+            assert process.stdin
+            process.stdin.close()
+        finally:
+            limit.cancel()
+            process.kill()
+
+    assert "decline" in str(told["result"])

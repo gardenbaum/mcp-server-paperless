@@ -130,6 +130,28 @@ def test_standard_input_is_read_to_its_end_and_kept_from_child_processes() -> No
     assert done.stdout.decode().splitlines() == ["''", ascii(lines), "True True"]
 
 
+CLOSED = """
+import os, sys
+from mcp_server_paperless.cli import parseable_stdin
+os.close(2)
+with parseable_stdin():
+    try:
+        os.fstat(2)
+    except OSError:
+        print("free")
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="os.dup has no lowest number there")
+def test_the_messages_are_never_read_from_a_standard_descriptor() -> None:
+    """With stderr closed the lowest free one is 2, which a child process would inherit."""
+    done = subprocess.run(  # noqa: S603 -- this interpreter and a script of this file
+        [sys.executable, "-c", CLOSED], input=b"", capture_output=True, check=True, timeout=60
+    )
+
+    assert done.stdout == b"free\n"
+
+
 SERVER = """
 import sys
 sys.path[:0] = [{tests!r}]

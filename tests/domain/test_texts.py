@@ -89,6 +89,15 @@ def test_a_call_with_it_anywhere_is_refused_too(params: dict[str, object], place
     assert found["params"]["arguments"] == {REFUSED_TEXT: place}
 
 
+@pytest.mark.parametrize("extra", [b', "error": {"code": 1, "message": "x"}}', b', "result": {}}'])
+@pytest.mark.parametrize("method", ["tools/call", "x"])
+def test_nothing_else_of_a_message_is_kept(method: str, extra: bytes) -> None:
+    """An error or a result beside the method would make it an answer to what the server asked."""
+    found = cast("Json", json.loads(parseable(message({"a": BAD}, method)[:-1] + extra)))
+
+    assert set(found) == {"jsonrpc", "id", "method", "params"}
+
+
 @pytest.mark.parametrize("method", ["prompts/get", "resources/read", "tools/call " + BAD])
 def test_another_request_is_refused_by_a_method_that_says_why(method: str) -> None:
     found = parseable(message({"a": BAD}, method, _meta={"v": 1}))
@@ -171,6 +180,13 @@ LONE = re.compile(
 PIECES = [
     *(b'"note"', b'"name"', b'"add_note"', b'"id"', b"7", b'"jsonrpc"', b'"2.0"', b'"method"'),
     *(b'"tools/call"', b'"prompts/get"', b'"params"', b'"arguments"', b"{", b"}", b"[", b"]"),
+    *(
+        b'"error"',
+        b'"result"',
+        b'{"code": 1, "message": "x"}',
+        b', "error": {"code": 1, "message": "x"}',
+    ),
+    *(b', "result": {}', b', "result": {"action": "accept", "content": {}}'),
     *(b":", b",", b'"', b"\\", b"\\\\", b"\\u", b"\\ud800", b"\\uDFFF", b"\\ud83e\\uddfe", b"d8"),
     *(
         b"\xff",
@@ -191,6 +207,8 @@ WHOLE = [
     message({"note": "fine"}, _meta={"x": BAD}),
     message({"a": BAD}, "prompts/get"),
     message({"note": "fine \U0001f9fe"}),
+    message({"note": BAD})[:-1] + b', "error": {"code": 1, "message": "x"}}',
+    message({"a": BAD}, "prompts/get")[:-1] + b', "result": {"action": "accept"}}',
     message({"note": BAD}) + b"\r\n" + message({"note": "second"}) + b"\n",
 ]
 
@@ -220,6 +238,7 @@ def test_a_message_the_sdk_rejects_is_never_run(data: bytes) -> None:
     assert [repr(found) for found in after if repr(found) in known] == known
     for found in refusals:
         assert LONE.search(data)
+        assert set(found) == {"jsonrpc", "id", "method", "params"}  # no answer to anything
         assert found["id"] is not None
         params = cast("Json", found["params"])
         if found["method"] == "tools/call":
