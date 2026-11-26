@@ -151,7 +151,11 @@ def test_the_stdio_target_is_the_scanned_filesystem_without_the_http_settings() 
         "LABEL",
         "ENTRYPOINT",
     }
-    assert {line.split()[0] for line in instructions(stage("base")) if line} == {"RUN", "COPY"}
+    assert {line.split()[0] for line in instructions(stage("base")) if line} == {
+        "ARG",
+        "RUN",
+        "COPY",
+    }
     stdio = [line for line in instructions(stage("stdio")) if line]
 
     assert stdio == [
@@ -234,7 +238,8 @@ def test_the_workflow_never_runs_untrusted_code_with_privileges() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     flow = workflow()
 
-    assert set(mapping(flow["on"])) == {"push", "pull_request"}
+    # The daily schedule runs on main, like a push to it.
+    assert set(mapping(flow["on"])) == {"schedule", "push", "pull_request"}
     assert "pull_request_target" not in text
     assert "workflow_run" not in text
     assert flow["permissions"] == {"contents": "read"}
@@ -417,7 +422,9 @@ def test_the_base_stage_removes_pip_and_upgrades_os_packages() -> None:
 
 @pytest.mark.decision("decision-28")
 def test_build_arguments_come_last_so_a_tag_build_reuses_the_scanned_layers() -> None:
-    runtime = stage("base") + stage("runtime")
+    # Except APT_REFRESH, on purpose: the package upgrade is rebuilt once a day, also for a tag,
+    # whose pushed digest is scanned again before it gets a version tag.
+    runtime = (stage("base") + stage("runtime")).replace("\nARG APT_REFRESH=none", "")
     first_arg = runtime.index("\nARG ")
 
     assert "RUN" not in runtime[first_arg:], "an ARG before a RUN changes that layer's cache key"
@@ -490,3 +497,23 @@ def test_the_stdio_image_needs_the_toolsets_passed_in_and_the_guide_says_so() ->
     assert len(stdio) == 2, "docs/container.md shows the stdio docker run"
     assert "-e PAPERLESS_MCP_TOOLSETS=" in page
     assert "docker run -i: -e" in ENABLE
+
+
+@pytest.mark.decision("decision-28")
+def test_the_package_upgrade_is_never_older_than_the_day_of_the_build() -> None:
+    """A build cache kept a libzstd1 that Debian had fixed, and the scan failed (2026-11-26)."""
+    upgrade = next(line for line in instructions(stage("base")) if "apt-get upgrade" in line)
+    assert "${APT_REFRESH}" in upgrade
+    builds = [
+        mapping(step["with"])
+        for name in ("build", "publish")
+        for step in steps(name)
+        if str(step.get("uses", "")).startswith("docker/build-push-action@")
+    ]
+    assert len(builds) == 3  # the image, the stdio target and the published one
+    for build in builds:
+        assert "APT_REFRESH=${{ steps.day.outputs.day }}" in str(build["build-args"])
+    for name in ("build", "publish"):
+        day = next(step for step in steps(name) if step.get("id") == "day")
+        assert "date -u +%F" in str(day["run"])
+    assert mapping(workflow()["on"])["schedule"] == [{"cron": "23 5 * * *"}]

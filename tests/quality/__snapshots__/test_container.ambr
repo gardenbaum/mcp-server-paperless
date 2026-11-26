@@ -19,6 +19,10 @@
             }),
           }),
           dict({
+            'id': 'day',
+            'run': 'echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"',
+          }),
+          dict({
             'uses': 'docker/setup-buildx-action',
           }),
           dict({
@@ -27,6 +31,7 @@
             'with': dict({
               'build-args': '''
                 REVISION=${{ github.sha }}
+                APT_REFRESH=${{ steps.day.outputs.day }}
   
               ''',
               'cache-from': 'type=gha,scope=${{ matrix.arch }}',
@@ -62,6 +67,10 @@
             'name': 'Build the stdio target (loaded locally, never pushed)',
             'uses': 'docker/build-push-action',
             'with': dict({
+              'build-args': '''
+                APT_REFRESH=${{ steps.day.outputs.day }}
+  
+              ''',
               'cache-from': 'type=gha,scope=${{ matrix.arch }}',
               'context': '.',
               'load': True,
@@ -159,6 +168,10 @@
             ''',
           }),
           dict({
+            'id': 'day',
+            'run': 'echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"',
+          }),
+          dict({
             'uses': 'docker/setup-buildx-action',
           }),
           dict({
@@ -189,6 +202,7 @@
               'build-args': '''
                 VERSION=${{ steps.meta.outputs.version }}
                 REVISION=${{ github.sha }}
+                APT_REFRESH=${{ steps.day.outputs.day }}
   
               ''',
               'cache-from': 'type=gha,scope=${{ matrix.arch }}',
@@ -344,6 +358,11 @@
           'v*',
         ]),
       }),
+      'schedule': list([
+        dict({
+          'cron': '23 5 * * *',
+        }),
+      ]),
     }),
     'permissions': dict({
       'contents': 'read',
