@@ -101,7 +101,7 @@ people who want all of the following in one server:
 - 🛡️ **Nothing final without your yes.** Before a tool deletes, overwrites, publishes or shares
   anything, it reports what would happen and waits for your confirmation. Changes to many
   documents at once can be previewed first.
-- 🪶 **Small to start with.** Only 20 tools by default out of the 108, so the assistant starts
+- 🪶 **Small to start with.** Only 20 tools by default out of the 111, so the assistant starts
   with the essentials and you decide what else it may do. Search results are short lists and long
   documents are read piece by piece, so a conversation does not fill up with text it does not
   need.
