@@ -152,20 +152,12 @@ def test_the_messages_are_never_read_from_a_standard_descriptor() -> None:
     assert done.stdout == b"free\n"
 
 
-def test_a_free_standard_descriptor_is_taken_only_while_a_higher_one_is_found(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The same as above in this process, where os.dup gives what the test wants."""
+def test_a_free_standard_descriptor_is_taken_only_while_a_higher_one_is_found() -> None:
+    """The same as above in this process, with duplicates the test chooses."""
     given = iter([1, 2, 7])
     closed: list[int] = []
 
-    def dup(_descriptor: int) -> int:
-        return next(given)
-
-    monkeypatch.setattr("os.dup", dup)
-    monkeypatch.setattr("os.close", closed.append)
-
-    assert above_standard(0) == 7
+    assert above_standard(0, lambda _descriptor: next(given), closed.append) == 7
     assert closed == [1, 2]
 
 

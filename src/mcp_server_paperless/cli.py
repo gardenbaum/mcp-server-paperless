@@ -98,15 +98,25 @@ class _Input(io.TextIOWrapper):
         """Nothing: closing waits for the thread that reads, for ever if no input comes (Ctrl-C)."""
 
 
-def above_standard(descriptor: int) -> int:
-    """A duplicate of ``descriptor`` that is none of 0 to 2, which a child process would get."""
+def above_standard(
+    descriptor: int,
+    dup: Callable[[int], int] = os.dup,
+    close: Callable[[int], None] = os.close,
+) -> int:
+    """A duplicate of ``descriptor`` that is none of 0 to 2, which a child process would get.
+
+    Args:
+        descriptor: The one to duplicate.
+        dup: Duplicates; tests pass a fake.
+        close: Closes; tests pass a fake.
+    """
     low: list[int] = []
-    copy = os.dup(descriptor)
+    copy = dup(descriptor)
     while copy <= 2:  # noqa: PLR2004 -- the standard descriptors
         low.append(copy)
-        copy = os.dup(descriptor)
+        copy = dup(descriptor)
     for number in low:
-        os.close(number)
+        close(number)
     return copy
 
 
