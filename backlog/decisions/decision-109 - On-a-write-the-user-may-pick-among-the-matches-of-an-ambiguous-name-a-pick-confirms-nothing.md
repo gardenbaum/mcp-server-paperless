@@ -22,8 +22,7 @@ decision-5 never guesses: an ambiguous name is an error that lists the matches. 
 - A pick answers exactly its question: kind, word, the argument that holds the word (the dialog names it) and every match with id, name and owner. One word in two arguments is two questions, also if both mean one kind. Other matches are another question; the number of documents is shown but not part of it, because it changes by itself and would use the picks up. If the name became unique while the user was asked and is not what they picked, or nothing has it any more, the call fails: neither another match nor a tag made by `create_missing_tags` takes the place of the pick.
 - A confirmation that names one of two objects that would be shown alike names its id. This holds without a pick, too.
 - A pick confirms nothing. The confirmation of decision-44 is asked for afterwards, for the picked object; `confirm=true` picks nothing. A pick asked for after an accepted confirmation takes that acceptance back. Under decision-53 a pick that is not made is no `NotConfirmed`.
-- On 2026-07-28 the picks and the error travel in the sealed state of decision-44, which any answer uses up. Of a longer error (a batch) the first 8000 characters and the hint travel, and the rest is counted: the error after a no is then cut there, while a client that is not asked, or that waits on a handshake connection, gets all of it.
-- Two options of a select field with one label are matches like two objects of one name, for a document's value and for an option to rename or remove; the dialog names label and place in the list, and so does a confirmation of one of them. Two renames of one option are refused. `update_documents` collects what is wrong with its items: it asks, for the first question, only if every refused item is ambiguous.
+- On 2026-07-28 the picks and the error travel in the sealed state of decision-44, which any answer uses up.
 - Supplements decision-5 and decision-44; decision-53 is unchanged.
 <!-- SECTION:DECISION:END -->
 
@@ -35,7 +34,7 @@ decision-5 never guesses: an ambiguous name is an error that lists the matches. 
 - A POST that only reads counts as a write here; after one, nobody is asked.
 - The names may be up to the age of the cache old (300 seconds). An object that is gone then fails as with its id.
 - Naming an owner reads the list of users (cached like every list) before the dialog. If that fails, the id is shown.
-- An error without a question, such as a list of errors of which one is something else, asks nothing.
+- An error without a question, such as one that lists the errors of several items, asks nothing.
 <!-- SECTION:CONSEQUENCES:END -->
 
 ## Alternatives
