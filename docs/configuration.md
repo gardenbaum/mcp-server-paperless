@@ -25,8 +25,8 @@ The HTTP transport has its own variables in [Run over HTTP](http.md), the OIDC l
 | `PAPERLESS_PUBLIC_URL` | Base URL for links shown to users (`web_url`, share links), if it differs from `PAPERLESS_URL`, for example when the server reaches Paperless under a container name; an empty value counts as unset |
 
 Requires paperless-ngx 3.5.1 or later (API version 10). 3.5.1 is the oldest supported release and
-the one the tests run against (a fast tier on every pull request, the whole suite after every
-merge and nightly); the latest 3.x release is tested weekly. paperless-ngx
+the one the tests run against (the whole suite before every
+release); the latest 3.x release is tested weekly. paperless-ngx
 3.4.x, 3.5.0 and 2.x are not supported. Against an older release with API version 10 the server still
 starts, but some tools fail or answer differently: it logs one warning, and `get_instance_overview`
 says in `too_old` that Paperless must be updated. A version it cannot read as a release
@@ -98,7 +98,8 @@ PAPERLESS_MCP_TOOLSETS=core,ai,mail:read,workflows:read
 - The other selected toolsets keep their writing tools, also for the same objects: with
   `mail:read,permissions` the assistant can still share mail accounts and rules or hand them over, with
   `core:read,bulk` it can still change documents. Select every toolset that writes them read-only, too.
-- Descriptions of tools that are offered may still name a tool that is not; it cannot be called.
+- Reading tools name no tool that is hidden. The texts of writing tools, results and confirmations may
+  still name one; it cannot be called.
 - `PAPERLESS_MCP_READ_ONLY=true` wins: then everything is read-only. `all` stands alone: list every
   toolset to make some of them read-only, and use `PAPERLESS_MCP_READ_ONLY` instead of `all:read`.
   Another suffix, or a toolset both with and without it, stops the server.
@@ -126,6 +127,12 @@ The assistant can also pass `confirm=true` in its first call, when you already a
 this; no dialog is shown then. A client that declares dialogs but cannot show them to anybody (a
 run without a person) is told "no" every time, so this is its only way. Dialogs need one server
 process: with several behind one address, an answer that reaches another process changes nothing.
+
+Where a name in a write matches several objects, a client that can show dialogs lets you pick the
+one you mean: you see name, id, number of documents and owner of up to 20 matches. The call goes on
+only with your pick. If you pick none, nothing changes, and the assistant gets the list of matches
+and is told to ask you. A pick confirms nothing: what needs a confirmation asks for it afterwards.
+Reading tools and previews (`dry_run`) do not ask; they list the matches.
 
 Which clients were seen to show the dialog: none yet. According to their documentation
 [Claude Code](https://code.claude.com/docs/en/mcp) and

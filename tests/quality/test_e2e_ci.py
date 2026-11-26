@@ -343,8 +343,8 @@ def test_the_scope_command_prints_the_job_outputs_for_a_toolset_change() -> None
     assert code == 0
     lines = out.splitlines()
     assert lines[0] == "mode=fast"
-    names = [contract("test_pdf"), contract("test_pdf_insert")]
-    names += [e2e("test_pages"), e2e("test_pdf"), e2e("test_pdf_insert")]
+    names = [contract("test_pdf"), contract("test_pdf_insert"), contract("test_pdf_steps")]
+    names += [e2e("test_pages"), e2e("test_pdf"), e2e("test_pdf_insert"), e2e("test_pdf_steps")]
     assert lines[1] == f"targets={STDIO} {' '.join(names)}"
 
 
@@ -425,16 +425,22 @@ HOSTED_SECONDS = {
     "tests/e2e/test_confirmation.py": 113,
     "tests/e2e/test_pdf_insert.py": 113,
     "tests/e2e/test_pages.py": 109,
+    "tests/contract/test_pdf_steps.py": 106,
     "tests/e2e/test_versions.py": 102,
+    "tests/contract/test_workflow_steps.py": 94,
+    "tests/contract/test_bulk_limits.py": 90,
     "tests/contract/test_bulk_items.py": 83,
     "tests/contract/test_document_reader.py": 72,
     "tests/contract/test_trash.py": 67,
     "tests/contract/test_admin.py": 64,
+    "tests/e2e/test_pdf_steps.py": 62,
     "tests/e2e/test_text_edits.py": 61,
     "tests/contract/test_document_upload.py": 60,
     "tests/e2e/test_upload_duplicates.py": 60,
+    "tests/contract/test_mail_steps.py": 58,
     "tests/e2e/test_update_document.py": 58,
     "tests/e2e/test_toolset_guide.py": 54,
+    "tests/e2e/test_bulk_limits.py": 52,
     "tests/contract/test_notes_and_trash.py": 50,
     "tests/contract/test_text_edits.py": 50,
     "tests/e2e/test_read_documents.py": 49,
@@ -454,6 +460,7 @@ HOSTED_SECONDS = {
     "tests/e2e/test_files.py": 16,
     "tests/e2e/test_mail.py": 16,
     "tests/contract/test_selection.py": 15,
+    "tests/contract/test_view_steps.py": 15,
     "tests/e2e/test_notes_and_trash.py": 15,
     "tests/e2e/test_http.py": 14,
     "tests/e2e/test_stdio.py": 14,
@@ -467,6 +474,7 @@ HOSTED_SECONDS = {
     "tests/contract/test_mail.py": 6,
     "tests/e2e/test_views.py": 6,
     "tests/e2e/test_workflows.py": 6,
+    "tests/e2e/test_left_out_operations.py": 4,
     "tests/e2e/test_tasks.py": 4,
     "tests/contract/test_taxonomy_reader.py": 2,
     "tests/contract/test_view_filters.py": 2,
@@ -570,28 +578,14 @@ GOOD_CI = """\
 on:
   pull_request:
 jobs:
-  e2e:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      matrix:
-        part: ["1/6", "2/6", "3/6", "4/6", "5/6", "6/6"]
+  check:
     steps:
-      - id: scope
-        run: python3 scripts/e2e_ci.py scope --part "$PART"
-      - if: steps.scope.outputs.mode != 'skip'
-        run: just e2e-paths $TARGETS
-      - if: failure() && steps.scope.outputs.mode != 'skip'
-        run: docker compose logs
+      - run: just lint
 """
 
 GOOD_FULL = """\
 on:
-  push:
-    branches: [main]
-  schedule:
-    - cron: "17 3 * * *"
+  workflow_dispatch:
 jobs:
   e2e-shard:
     timeout-minutes: 25
@@ -651,38 +645,14 @@ def test_the_reference_workflows_have_no_problems() -> None:
     assert problems_of() == []
 
 
+@pytest.mark.decision("decision-112")
 @pytest.mark.parametrize(
-    ("old", "new", "problem"),
-    [
-        ("== 'pull_request'", "== 'push'", "no `if`"),
-        ("    if: github.event_name == 'pull_request'\n", "    if: always()\n", "no `if`"),
-        ("  e2e:\n", "  e2e:\n    name: other\n", "name"),
-        ("  e2e:\n", "  e2e-x:\n", "no job `e2e`"),
-        ("    runs-on: ubuntu-latest\n", "    continue-on-error: true\n", "continue-on-error"),
-        ("      - id: scope\n", "      - id: other\n", "scope step"),
-        ("      - if: steps.scope.outputs.mode != 'skip'\n", "      - if: success()\n", "mode"),
-        ("      - if: steps.scope.outputs.mode != 'skip'\n", "      - if: false\n", "mode"),
-        ("just e2e-paths $TARGETS", "just e2e", "e2e-paths"),
-        ('["1/6", "2/6", "3/6", "4/6", "5/6", "6/6"]', '["1/6", "2/6", "3/6"]', "matrix"),
-        ('scope --part "$PART"', "scope", "--part"),
-        ("      - if: failure() && steps", "      - if: failure() || steps", "mode"),
-        (
-            "        run: docker compose logs",
-            "        if: success()\n        run: docker compose logs",
-            "mode",
-        ),
-        ("    timeout-minutes: 20\n", "", "timeout-minutes"),
-        ("timeout-minutes: 20", "timeout-minutes: 35", "timeout-minutes"),
-        ("timeout-minutes: 20", "timeout-minutes: 60", "timeout-minutes"),
-    ],
+    ("old", "new"), [("  check:\n", "  e2e:\n"), ("just lint", "just e2e-paths tests/e2e")]
 )
-def test_a_pull_request_workflow_that_could_skip_the_live_tests_wrongly_is_reported(
-    old: str, new: str, problem: str
-) -> None:
+def test_a_pull_request_workflow_that_runs_live_tests_is_reported(old: str, new: str) -> None:
     broken = GOOD_CI.replace(old, new)
     assert broken != GOOD_CI
-    found = problems_of(ci=broken)
-    assert any(problem in line for line in found), found
+    assert any("before a release only" in line for line in problems_of(ci=broken))
 
 
 @pytest.mark.parametrize(
@@ -697,8 +667,10 @@ def test_a_pull_request_workflow_that_could_skip_the_live_tests_wrongly_is_repor
             "continue-on-error",
         ),
         ("  e2e-shard:\n", "  other:\n", "no job `e2e-shard`"),
-        ("  push:\n    branches: [main]\n", "", "push to main"),
-        ("  schedule:\n", "  workflow_dispatch:\n", "schedule"),
+        ("  workflow_dispatch:\n", "  other:\n", "workflow_dispatch"),
+        ("on:\n", "on:\n  push:\n    branches: [main]\n", "only when dispatched"),
+        ("on:\n", "on:\n  schedule:\n    - cron: '1 1 * * *'\n", "only when dispatched"),
+        ("on:\n", "on:\n  pull_request:\n", "only when dispatched"),
         ('just e2e-shard "$SHARD"', "just e2e", "e2e-shard"),
         ("    timeout-minutes: 25\n", "", "timeout-minutes"),
         ("timeout-minutes: 25", "timeout-minutes: 60", "timeout-minutes"),

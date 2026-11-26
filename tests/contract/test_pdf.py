@@ -701,11 +701,11 @@ async def test_a_second_request_for_the_same_document_leaves_both_in_doubt(
     )
     assert earlier.doubt is not None
     assert earlier.ids == (None,)
-    await two_made(backend, user, f"{document}_edit_1.pdf")
+    await made_files(backend, user, f"{document}_edit_1.pdf", 2)
 
 
-async def two_made(backend: Backend, user: Ports, name: str) -> None:
-    """Wait for both documents of a name, for the cleanup."""
+async def made_files(backend: Backend, user: Ports, name: str, count: int) -> None:
+    """Wait for all documents of a name, for the cleanup."""
     deadline = time.monotonic() + SECONDS
     while True:
         listed = await user.documents.search_documents(
@@ -713,7 +713,7 @@ async def two_made(backend: Backend, user: Ports, name: str) -> None:
         )
         rows = [await user.documents.get_document(hit.id) for hit in listed.hits]
         made = [row.id for row in rows if row.original_file_name == name]
-        if len(made) == 2:
+        if len(made) == count:
             break
         assert time.monotonic() < deadline, "Paperless did not finish in time"
         await asyncio.sleep(0.5)

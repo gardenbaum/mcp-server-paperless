@@ -44,6 +44,7 @@ from mcp_server_paperless.services.tag_hierarchy import (
     blocked_removals,
     close_over_ancestors,
 )
+from mcp_server_paperless.services.taxonomy import names_apart
 from mcp_server_paperless.services.taxonomy_edits import documents as count_documents
 
 if TYPE_CHECKING:
@@ -162,11 +163,11 @@ class BulkOperations:
             on_files=True,
         )
 
-    async def _tag_ids(self, values: Sequence[NameOrId]) -> list[int]:
+    async def _tag_ids(self, values: Sequence[NameOrId], role: str) -> list[int]:
         found: list[int] = []
         for value in values:
             try:
-                found.append((await self._taxonomy.resolve("tag", value)).id)
+                found.append((await self._taxonomy.resolve("tag", value, role=role)).id)
             except NotFound as error:
                 hint = f"{error.hint} Create it first with create_taxonomy_item(kind='tag')."
                 raise NotFound(error.message, hint=hint) from None
@@ -182,7 +183,9 @@ class BulkOperations:
         if not (add or remove):
             message = "Nothing to change: no tag was given."
             raise Validation(message, hint="Pass tags to add or to remove.")
-        added, removed = await self._tag_ids(add), await self._tag_ids(remove)
+        both = isinstance(operation, ModifyTags)
+        added = await self._tag_ids(add, "operation add" if both else "operation tags")
+        removed = await self._tag_ids(remove, "operation remove" if both else "operation tags")
         if set(added) & set(removed):
             message = "A tag is both added and removed."
             raise Validation(message, hint="Name each tag once, to add or to remove.")
@@ -196,10 +199,11 @@ class BulkOperations:
                 )
                 raise Validation(message, hint="Keep the parent, or do not add the child.")
         along = [t for t in close_over_ancestors(added, parents) if t not in added]
+        shown = names_apart(items)
         lead, tail = _tag_sentence(
-            [names[t] for t in added],
-            [names[t] for t in removed],
-            [quoted(names[t]) if t in names else _label(names, t) for t in along],
+            [shown[t] for t in added],
+            [shown[t] for t in removed],
+            [shown.get(t) or _label(names, t) for t in along],
         )
         return Operation(
             name=operation.op,
@@ -224,9 +228,13 @@ class BulkOperations:
         else:
             kind, value = "storage_path", operation.storage_path
         label = kind.replace("_", " ")
-        target = None if value is None else await self._taxonomy.resolve(kind, value)
+        target = (
+            None
+            if value is None
+            else await self._taxonomy.resolve(kind, value, role=f"operation {label}")
+        )
         try:
-            known = _names(await self._taxonomy.items(kind))
+            known = names_apart(await self._taxonomy.items(kind))
         except PermissionDenied:
             known = {}  # clearing needs no view permission; the old name is then just its id
         wanted = None if target is None else target.id
@@ -237,7 +245,7 @@ class BulkOperations:
         def describe(number: int | None) -> str:
             if number is None:
                 return "none"
-            return quoted(known[number]) if number in known else f"#{number}"
+            return known.get(number, f"#{number}")
 
         def effects(hits: list[DocumentHit]) -> dict[int, str]:
             return {
@@ -249,7 +257,7 @@ class BulkOperations:
         if target is None:
             lead, tail = f"remove the {label} from ", ""
         else:
-            lead, tail = f"set the {label} of ", f" to {quoted(target.name)}"
+            lead, tail = f"set the {label} of ", f" to {known.get(target.id, quoted(target.name))}"
         return Operation(
             name=operation.op,
             lead=lead,
@@ -270,7 +278,7 @@ class BulkOperations:
         names: dict[int, str] = {}
         items: dict[int, TaxonomyItem] = {}
         for key, value in operation.values.items():
-            item = await self._taxonomy.resolve("custom_field", key)
+            item = await self._taxonomy.resolve("custom_field", key, role="operation values")
             if item.id in sets:
                 message = f"Custom field {quoted(item.name)} is given twice."
                 raise Validation(message, hint="Name each field once, by name or by id.")
@@ -281,7 +289,7 @@ class BulkOperations:
                 links.add(item.id)
         removed: list[int] = []
         for key in operation.remove:
-            item = await self._taxonomy.resolve("custom_field", key)
+            item = await self._taxonomy.resolve("custom_field", key, role="operation remove")
             names[item.id] = item.name
             removed.append(item.id)
             if item.data_type == "documentlink":
@@ -360,11 +368,11 @@ def _every(names: list[str]) -> str:
 def _tag_sentence(added: list[str], removed: list[str], along: list[str]) -> tuple[str, str]:
     """The words before and after the documents in a tag operation's sentence.
 
-    ``along`` are the parent tags that come along, already as they are shown.
+    All are given as they are shown; ``along`` are the parent tags that come along.
     """
     parents = f" (with their parent tags {', '.join(along)})" if along else ""
-    adding = f"add the tags {_every(added)}{parents}"
-    removing = f"remove the tags {_every(removed)}"
+    adding = f"add the tags {', '.join(added)}{parents}"
+    removing = f"remove the tags {', '.join(removed)}"
     if added and removed:
         return f"{adding} and {removing} on ", ""
     return (f"{adding} to ", "") if added else (f"{removing} from ", "")

@@ -366,9 +366,11 @@ class ViewService:
 
     async def _find(self, view: NameOrId) -> SavedView:
         views = await self._reader.list_saved_views()
-        rows = [TaxonomyItem(id=v.id, name=v.name, document_count=None) for v in views]
+        rows = [
+            TaxonomyItem(id=v.id, name=v.name, document_count=None, owner=v.owner) for v in views
+        ]
         try:
-            wanted = pick("saved_view", rows, view).id
+            wanted = pick("saved_view", rows, view, role="view").id
         except NotFound as error:
             # The toolset may be on without list_taxonomy: point at its own list.
             hint = error.hint and error.hint.replace(
@@ -418,13 +420,15 @@ class ViewService:
         if kind is not None:
             # The web UI joins the values of a list rule with commas; each part is an id or name.
             parts = [part.strip() for part in text.split(",")] if number not in NULLABLE else [text]
-            text = ",".join([await self._id(kind, part) for part in parts if part])
+            text = ",".join(
+                [await self._id(kind, part, f"rule {RULE_TYPES[number]}") for part in parts if part]
+            )
         return FilterRule(rule_type=number, value=text)
 
-    async def _id(self, kind: TaxonomyKind, part: str) -> str:
+    async def _id(self, kind: TaxonomyKind, part: str, role: str) -> str:
         if part.isascii() and part.isdigit():
             return part
-        return str((await self._taxonomy.resolve(kind, part)).id)
+        return str((await self._taxonomy.resolve(kind, part, role=role)).id)
 
     async def _write[T](self, write: Callable[[], Awaitable[T]]) -> T:
         try:

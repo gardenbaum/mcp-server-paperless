@@ -239,7 +239,7 @@ class TaxonomyEditor:
             given["colour"] = _colour(fields.colour)
         if fields.parent is not None:
             tags = await self._reader.list_taxonomy("tag")
-            given["parent"] = pick("tag", tags, fields.parent).id
+            given["parent"] = pick("tag", tags, fields.parent, role="parent").id
         return given
 
     async def update(
@@ -274,7 +274,7 @@ class TaxonomyEditor:
         if not given and not options_asked:
             message = "Nothing to change: name at least one setting."
             raise Validation(message, hint="For example name, colour or match.")
-        current = pick(kind, await self._reader.list_taxonomy(kind), item)
+        current = pick(kind, await self._reader.list_taxonomy(kind), item, role="item")
         if options_asked:
             given["select_options"] = await self._options(current, edit)
         patch = TaxonomyValues.model_validate(given)
@@ -338,7 +338,7 @@ class TaxonomyEditor:
             PermissionDenied: The user may not delete objects of ``kind``, or this one.
         """
         rows = await self._reader.list_taxonomy(kind)
-        found = pick(kind, rows, item)
+        found = pick(kind, rows, item, role="item")
         count = found.document_count or 0
         parents = {row.id: row.parent for row in rows}
         gone: set[int] = descendants(found.id, parents) if kind == "tag" else set()

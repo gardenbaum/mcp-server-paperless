@@ -18,7 +18,7 @@ env:
   RUST_JUST_VERSION: "1.59.0"
 
 jobs:
-  # Job names `check (3.14)` / `check (3.15)` and `audit` are the required status checks; `e2e` is not (decision-24, superseded by decision-23).
+  # Job names `check (3.14)` / `check (3.15)` and `audit` are the required status checks. The live suite runs before a release only (e2e-full.yml, decision-112).
   check:
     name: check (${{ matrix.python }})
     runs-on: ubuntu-latest
@@ -93,6 +93,9 @@ jobs:
       - name: Test the lines of standard input on Windows (decision-110)
         run: uv run pytest tests/domain/test_texts.py --no-cov
 
+      - name: Test that the server starts on Windows
+        run: uv run pytest tests/test_start.py tests/test_cli.py --no-cov
+
   audit:
     runs-on: ubuntu-latest
     steps:
@@ -127,74 +130,3 @@ jobs:
 
       - name: Secret scan (gitleaks, whole history)
         run: just secrets
-
-  # The fast tier of the live suite on a pull request (decision-23): the stdio smoke test and the
-  # live contract and e2e modules of the toolsets the change touches, a small smoke set for a change
-  # outside that map (scripts/e2e_ci.py, tested). A few minutes, never the whole suite. It is not a
-  # required check (decision-24, superseded by decision-23); the controller waits for it (doc-2). The full suite runs after the
-  # merge and nightly in six shards (e2e-full.yml). The job always runs and reports; a change to
-  # documentation or backlog only skips its steps.
-  # A heavy tier (a change across many toolsets, over 450 s of recorded test time) is split over the
-  # six matrix parts; a part without work skips its steps and still reports. Nothing is dropped.
-  e2e:
-    name: e2e (${{ matrix.part }})
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        part: ["1/6", "2/6", "3/6", "4/6", "5/6", "6/6"]
-    # A hang guard, no quality gate: the tier takes 2 to 15 minutes. This replaces the 60 minutes of
-    # PLMCP-43, which guarded the whole suite in one job; that suite now runs in e2e-full.yml.
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0 # the diff needs the pull request's base and head commits
-          persist-credentials: false
-
-      # The changed paths are those of the pull request's own commits (merge base to head) and of
-      # the merge result against the base, so a stale base is covered. --no-renames lists both
-      # sides of a rename.
-      - id: scope
-        shell: bash
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PART: ${{ matrix.part }}
-        run: |
-          changed="$RUNNER_TEMP/changed-paths"
-          git diff --name-only -z --no-renames "$BASE_SHA...$HEAD_SHA" > "$changed"
-          git diff --name-only -z --no-renames "$BASE_SHA" HEAD >> "$changed"
-          tr '\0' '\n' < "$changed" | sort -u
-          python3 scripts/e2e_ci.py scope --part "$PART" < "$changed" | tee -a "$GITHUB_OUTPUT"
-
-      - if: steps.scope.outputs.mode != 'skip'
-        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
-        with:
-          enable-cache: true
-
-      - if: steps.scope.outputs.mode != 'skip'
-        name: Install just
-        run: uv tool install "rust-just==${RUST_JUST_VERSION}"
-
-      - if: steps.scope.outputs.mode != 'skip'
-        name: Sync dependencies
-        run: uv sync --locked
-
-      - if: steps.scope.outputs.mode != 'skip'
-        name: Run the tier
-        env:
-          TARGETS: ${{ steps.scope.outputs.targets }}
-        run: just e2e-paths $TARGETS
-
-      - if: failure() && steps.scope.outputs.mode != 'skip'
-        name: Collect container logs
-        run: docker compose -f tests/e2e/compose.yaml logs --no-color > e2e-containers.log
-
-      - if: failure() && steps.scope.outputs.mode != 'skip'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: e2e-container-logs-part-${{ strategy.job-index }}
-          path: e2e-containers.log
-          retention-days: 7

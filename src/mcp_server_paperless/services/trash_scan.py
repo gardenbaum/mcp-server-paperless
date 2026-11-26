@@ -253,7 +253,11 @@ class TrashScan:
             message = "deleted_from is after deleted_to."
             raise Validation(message, hint="Swap them, or leave one out for an open range.")
         kind = wanted.document_type
-        type_id = None if kind is None else (await self._taxonomy.resolve("document_type", kind)).id
+        type_id = (
+            None
+            if kind is None
+            else (await self._taxonomy.resolve("document_type", kind, role="document type")).id
+        )
         missing: list[int] = []
         if wanted.ids is None:
             scan = await self.first()

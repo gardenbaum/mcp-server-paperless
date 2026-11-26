@@ -10,10 +10,11 @@ from fakes.paperless import FakePaperless, FakeTag, FakeTaxonomy, seeded
 from hypothesis import assume, example, given
 from hypothesis import strategies as st
 
+from mcp_server_paperless.domain.choices import Choice, Question, picking
 from mcp_server_paperless.domain.credentials import PaperlessCredential
-from mcp_server_paperless.domain.errors import Ambiguous, NotFound, PermissionDenied
+from mcp_server_paperless.domain.errors import Ambiguous, Conflict, NotFound, PermissionDenied
 from mcp_server_paperless.domain.taxonomy import TaxonomyItem
-from mcp_server_paperless.services.taxonomy import TaxonomyResolver, fold, pick
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver, fold, names_apart, pick
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.taxonomy import TaxonomyKind
@@ -352,3 +353,118 @@ async def test_a_denial_keeps_its_message_and_hint_when_served_from_the_cache(
         seen.append((raised.value.message, raised.value.hint))
 
     assert seen == [("No user for you.", "Ask an administrator.")] * 2
+
+
+# --- the user's pick (decision-109) ---------------------------------------------------------------
+
+DOUBLES = [
+    TaxonomyItem(id=4, name="Meier", document_count=34),
+    TaxonomyItem(id=9, name="Meier", document_count=1, owner=3),
+    TaxonomyItem(id=5, name="meier", document_count=None),
+]
+
+
+def question(items: list[TaxonomyItem], word: str, kind: str = "correspondent") -> Question:
+    with pytest.raises(Ambiguous) as raised:
+        _ = pick(kind, items, word)
+    assert raised.value.question is not None
+    return raised.value.question
+
+
+@pytest.mark.decision("decision-109")
+def test_an_ambiguous_name_asks_with_the_titled_matches() -> None:
+    found = question(DOUBLES, "Meier")
+
+    assert (found.what, found.word) == ("correspondents", "Meier")
+    assert found.choices == (
+        Choice("4", "'Meier' (id 4)", detail="34 documents"),
+        Choice("9", "'Meier' (id 9)", owner=3, detail="1 document"),
+    )
+    assert [c.title for c in question(DOUBLES, "MEIER").choices][2] == "'meier' (id 5)"
+    assert question(DOUBLES, "Meier", "document_type").what == "document types"
+
+
+@pytest.mark.decision("decision-109")
+def test_a_title_holds_a_name_only_quoted_cut_and_visible() -> None:
+    hostile = "a\n(id 1)\u202e" + "x" * 100
+    rows = [TaxonomyItem(id=n, name=hostile, document_count=0) for n in (1, 2)]
+
+    for choice in question(rows, hostile).choices:
+        assert choice.title.startswith("'a (id 1)xx")
+        assert choice.title.endswith(f"\u2026' (id {choice.value})")
+        assert len(choice.title) <= 100
+
+
+@pytest.mark.decision("decision-109")
+@pytest.mark.parametrize("wanted", [4, 9])
+def test_the_picked_match_is_returned(wanted: int) -> None:
+    with picking([question(DOUBLES, "Meier").picking(str(wanted))]):
+        assert pick("correspondent", DOUBLES, "Meier").id == wanted
+        assert pick("correspondent", DOUBLES, " Meier ").id == wanted
+
+
+@pytest.mark.decision("decision-109")
+def test_a_pick_for_another_question_or_of_no_match_does_nothing() -> None:
+    asked = question(DOUBLES, "Meier")
+    with picking([asked.picking("4")]):
+        for kind, rows, word in (
+            ("tag", DOUBLES, "Meier"),
+            ("correspondent", DOUBLES, "MEIER"),
+            ("correspondent", [*DOUBLES, DOUBLES[0].model_copy(update={"id": 6})], "Meier"),
+            ("correspondent", [DOUBLES[0], DOUBLES[1].model_copy(update={"id": 6})], "Meier"),
+        ):
+            with pytest.raises(Ambiguous):
+                _ = pick(kind, rows, word)
+    for value in ("5", "", "x"):
+        with picking([asked.picking(value)]), pytest.raises(Ambiguous):
+            _ = pick("correspondent", DOUBLES, "Meier")
+
+
+@pytest.mark.decision("decision-109")
+def test_a_pick_does_not_change_what_is_no_question() -> None:
+    with picking([question(DOUBLES, "Meier").picking("9")]):
+        assert pick("correspondent", DOUBLES, "meier").id == 5
+        assert pick("tag", DOUBLES[:1], "Meier").id == 4
+        assert pick("correspondent", DOUBLES, 4).id == 4
+        with pytest.raises(NotFound):
+            _ = pick("correspondent", DOUBLES, "Huber")
+
+
+@pytest.mark.decision("decision-109")
+def test_a_pick_that_is_gone_is_never_replaced_by_what_is_left() -> None:
+    with picking([question(DOUBLES, "Meier").picking("9")]):
+        assert pick("correspondent", DOUBLES[1:2], "Meier").id == 9
+        with pytest.raises(Conflict) as raised:
+            _ = pick("correspondent", DOUBLES[:1], "Meier")
+        with pytest.raises(Conflict):  # by its name in another case
+            _ = pick("correspondent", DOUBLES[2:], "Meier")
+        with pytest.raises(Conflict):  # nor by nothing, which a caller might create
+            _ = pick("correspondent", [], "Meier")
+
+    assert raised.value.message == (
+        "The correspondent the user picked (id 9) does not match 'Meier' any more."
+    )
+
+
+@pytest.mark.decision("decision-109")
+def test_one_word_in_two_roles_is_two_questions() -> None:
+    with pytest.raises(Ambiguous) as raised:
+        _ = pick("correspondent", DOUBLES, "Meier", role="parent")
+    asked = raised.value.question
+    assert asked is not None
+    assert asked.role == "parent"
+
+    with picking([asked.picking("9")]):
+        assert pick("correspondent", DOUBLES, "Meier", role="parent").id == 9
+        with pytest.raises(Ambiguous):
+            _ = pick("correspondent", DOUBLES, "Meier", role="item")
+        assert pick("correspondent", DOUBLES[:1], "Meier", role="item").id == 4
+
+
+@pytest.mark.decision("decision-109")
+def test_names_that_would_be_shown_alike_are_told_apart_by_the_id() -> None:
+    long = [TaxonomyItem(id=n, name="x" * 99 + str(n), document_count=0) for n in (11, 12)]
+    shown = names_apart([*DOUBLES, *long])
+
+    assert [shown[n] for n in (4, 9, 5)] == ["'Meier' (id 4)", "'Meier' (id 9)", "'meier'"]
+    assert [shown[n].endswith(f"' (id {n})") for n in (11, 12)] == [True, True]

@@ -9,7 +9,7 @@ import io
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, NoReturn, final, override
+from typing import TYPE_CHECKING, BinaryIO, Final, NoReturn, final, override
 
 from pydantic import ValidationError
 from pydantic_settings import BaseSettings
@@ -27,11 +27,20 @@ from mcp_server_paperless.settings import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator
+    from collections.abc import Callable, Generator, Sequence
 
     import uvicorn
     from _typeshed import WriteableBuffer
     from fastmcp import FastMCP
+
+
+HELP: Final = """\
+usage: mcp-server-paperless
+
+MCP server for paperless-ngx over stdio; mcp-server-paperless-http serves it over HTTP.
+It takes no arguments. PAPERLESS_URL and PAPERLESS_TOKEN must be set in the environment; the other
+settings are in https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md
+"""
 
 
 def _fail(message: str) -> NoReturn:
@@ -117,14 +126,21 @@ def run_stdio(server: FastMCP) -> None:
 
 
 def main(
-    protect: Callable[[], None] = protect_process, run: Callable[[FastMCP], None] = run_stdio
+    protect: Callable[[], None] = protect_process,
+    run: Callable[[FastMCP], None] = run_stdio,
+    *,
+    arguments: Sequence[str] | None = None,
 ) -> None:
-    """Run the server over stdio.
+    """Run the server over stdio, or say how that is done.
 
     Args:
         protect: Keeps other processes out of this one; tests pass a fake.
         run: Serves; tests pass a fake.
+        arguments: Those of the command line; tests pass their own.
     """
+    if {"-h", "--help"} & set(sys.argv[1:] if arguments is None else arguments):
+        _ = sys.stdout.write(HELP)
+        return
     problems: list[str] = []
     paperless = _load(PaperlessSettings, problems)
     settings = _load(ServerSettings, problems)

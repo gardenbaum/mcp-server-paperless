@@ -18,6 +18,8 @@ from mcp_server_paperless.domain.urls import without_credentials
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator, Iterator, Sequence
 
+    from mcp_server_paperless.domain.choices import Question
+
 
 class PaperlessMcpError(Exception):
     """Base of every error with a client-safe message.
@@ -43,7 +45,18 @@ class NotFound(PaperlessMcpError):
 
 
 class Ambiguous(PaperlessMcpError):
-    """A name matches more than one object; the message lists the candidates."""
+    """A name matches more than one object; the message lists the candidates.
+
+    Attributes:
+        question: What the user can be asked, so that they pick one (decision-109).
+    """
+
+    def __init__(
+        self, message: str, *, hint: str | None = None, question: Question | None = None
+    ) -> None:
+        """Create the error; without a ``question`` nobody is asked."""
+        super().__init__(message, hint=hint)
+        self.question: Question | None = question
 
 
 class Validation(PaperlessMcpError):
@@ -444,6 +457,13 @@ def listed(names: Sequence[str], limit: int = 5) -> str:
     shown = ", ".join(quoted(name) for name in names[:limit])
     rest = len(names) - limit
     return f"{shown} and {rest} more" if rest > 0 else shown
+
+
+def first_of(shown: Sequence[str], limit: int = 5) -> str:
+    """The first ``limit`` texts as they are, then "and N more"."""
+    rest = len(shown) - limit
+    text = ", ".join(shown[:limit])
+    return f"{text} and {rest} more" if rest > 0 else text
 
 
 class AuthenticationFailed(PaperlessMcpError):

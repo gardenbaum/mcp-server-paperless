@@ -343,6 +343,69 @@ async def test_the_workflows_that_use_an_object_are_found_and_their_parts_read(
 
 
 @pytest.mark.decision("decision-81")
+async def test_a_used_object_of_every_other_kind_is_found(client: Connected, stack: Stack) -> None:
+    name, other = (f"{SCRATCH}{uuid.uuid4().hex[:8]}" for _ in range(2))
+    account = make(
+        stack,
+        "mail_accounts",
+        {
+            "name": name,
+            "imap_server": "127.0.0.1",
+            "imap_port": 1,
+            "imap_security": 2,
+            "username": "user@example.com",
+            "password": "e2e-Workflow-Passw0rd-4711",
+        },
+    )
+    try:
+        rule = make(stack, "mail_rules", {"name": name, "account": account, "action": 3})
+        _ = await call(
+            client,
+            "create_workflow",
+            name=name,
+            enabled=False,
+            triggers=[
+                {"type": "consumption", "mailrule": rule},
+                {"type": "added", "has_correspondent": "e2e-acme"},
+            ],
+            actions=[
+                {
+                    "type": "assignment",
+                    "assign_correspondent": "e2e-acme",
+                    "assign_document_type": "e2e-invoice",
+                    "assign_storage_path": "e2e-archive",
+                    "assign_owner": "e2e-reader",
+                    "assign_view_groups": ["e2e-group"],
+                },
+            ],
+        )
+        _ = await call(client, "create_workflow", name=other, enabled=False, triggers=[NEVER])
+
+        async def used(kind: str, uses: object) -> dict[str, list[str]]:
+            found = await call(client, "list_workflows", uses_kind=kind, uses=uses)
+            return {
+                str(row["name"]): [
+                    str(use["setting"]) for use in cast("list[Json]", row["used_in"])
+                ]
+                for row in cast("list[Json]", found["workflows"])
+                if row["name"] in {name, other}
+            }
+
+        assert await used("correspondent", "e2e-acme") == {
+            name: ["has_correspondent", "assign_correspondent"]
+        }
+        assert await used("document_type", "e2e-invoice") == {name: ["assign_document_type"]}
+        assert await used("storage_path", "e2e-archive") == {name: ["assign_storage_path"]}
+        assert await used("user", "e2e-reader") == {name: ["assign_owner"]}
+        assert await used("group", "e2e-group") == {name: ["assign_view_groups"]}
+        assert await used("mail_rule", rule) == {name: ["mailrule"]}
+    finally:
+        for row in stored(stack, name):
+            _ = stack.admin.delete(f"/api/workflows/{row['id']}/")
+        _ = stack.admin.delete(f"/api/mail_accounts/{account}/")
+
+
+@pytest.mark.decision("decision-81")
 async def test_a_user_who_may_only_view_workflows_reads_their_parts_too(
     client: Connected, stack: Stack, user: Callable[..., Signed]
 ) -> None:
@@ -449,6 +512,39 @@ async def test_single_parts_are_written_and_hidden_values_never_leave_paperless(
     left = await part(operation="remove", action_id=hook["id"], confirm=True)
     assert left == [locked, fresh, cleared[2], suggests]
     assert "planted" not in str(outputs)
+
+
+@pytest.mark.decision("decision-82")
+async def test_one_trigger_is_changed_and_the_others_stay(client: Connected, stack: Stack) -> None:
+    name = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
+    made = secret_workflow(stack, name)
+    never, by_hand = cast("list[Json]", made["triggers"])
+
+    async def change(stored_one: Json, **arguments: object) -> list[Json]:
+        output = await call(
+            client,
+            "update_workflow_part",
+            workflow=name,
+            operation="change",
+            trigger_id=stored_one["id"],
+            **arguments,
+        )
+        assert "planted" not in str(output)
+        [raw] = stored(stack, name)
+        assert raw["actions"] == made["actions"]
+        return cast("list[Json]", raw["triggers"])
+
+    renamed = await change(
+        never, trigger={"type": "consumption", "filename": "contract-workflow-never-2-*.none"}
+    )
+    assert renamed == [{**never, "filter_filename": "contract-workflow-never-2-*.none"}, by_hand]
+    tagged = await change(by_hand, trigger={"type": "manual", "has_tags": ["e2e-finance"]})
+    assert tagged[0] == renamed[0]
+    assert (tagged[1]["id"], len(cast("list[int]", tagged[1]["filter_has_tags"]))) == (
+        *(by_hand["id"], 1),
+    )
+    cleared = await change(by_hand, clear=["has_tags"])
+    assert cleared == [renamed[0], by_hand]
 
 
 @pytest.mark.decision("decision-82")

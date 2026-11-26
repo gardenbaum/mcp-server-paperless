@@ -39,6 +39,8 @@ EXPECTED_VERSION = os.environ.get("PAPERLESS_E2E_VERSION", "3.5.1")
 
 READY_TIMEOUT = 300.0
 CONSUME_TIMEOUT = 180.0
+# A text file is consumed in about a second: a longer step would double its time.
+CONSUME_POLL = 0.2
 # Every custom field data type of 3.5.1 except `select`, which needs options (see seed()).
 DATA_TYPES = (
     *("string", "url", "date", "boolean", "integer", "float", "monetary"),
@@ -300,13 +302,18 @@ def consume(
         files={"document": (filename or f"{title}.pdf", content, mime_type)},
     ).raise_for_status()
     task_id = str(parse(uploaded))
+    return task_id, settled(api, task_id, title)
+
+
+def settled(api: httpx2.Client, task_id: str, title: str) -> int | None:
+    """Wait until the task that consumes `title` ended; what it made, None if it failed."""
     deadline = time.monotonic() + CONSUME_TIMEOUT
     while time.monotonic() < deadline:
         tasks = results(api.get("/api/tasks/", params={"task_id": task_id}).raise_for_status())
         if tasks and tasks[0]["status"] in {"success", "failure", "revoked"}:
             related = seq(tasks[0]["related_document_ids"])
-            return task_id, num(related[0]) if related else None
-        time.sleep(1)
+            return num(related[0]) if related else None
+        time.sleep(CONSUME_POLL)
     pytest.fail(f"Consuming {title!r} timed out after {CONSUME_TIMEOUT:.0f}s. Logs: `{LOGS_HINT}`")
 
 

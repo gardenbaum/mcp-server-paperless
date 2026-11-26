@@ -86,6 +86,7 @@ from mcp_server_paperless.domain.bulk import (
     TagsChange,
     TrashDocuments,
 )
+from mcp_server_paperless.domain.choices import note_write
 from mcp_server_paperless.domain.documents import (
     TEXT_CHANGED,
     CustomFieldValue,
@@ -279,6 +280,9 @@ MAX_LABEL = 64
 
 VERSION = "3.5.1"
 API_VERSION = 10
+
+# A PDF that is taken but cannot be consumed (the live tests fail their tasks with it too).
+BROKEN_PDF = b"%PDF-1.4 broken"
 
 # The types 3.4.2 consumes without Tika or Gotenberg; `post_document` answers 400 for any other.
 CONSUMABLE = frozenset(
@@ -902,6 +906,8 @@ def write[F: FakePaperless, **P, R](
                 "allow_writes=True in tests that mean to write."
             )
             raise WriteNotAllowedError(message)
+        note_write()  # as the client does
+        self.sent_writes.append((method.__name__, args, kwargs))
         return await method(self, *args, **kwargs)
 
     _WRITES.add(guarded)
@@ -929,6 +935,8 @@ class FakePaperless:
             raise LookupError(message)
         self.user: FakeUser = found[0]
         self.allow_writes: bool = allow_writes
+        # Every write this user sent, in order: the method and its arguments.
+        self.sent_writes: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
 
     async def get_overview(self) -> InstanceOverview:
         """`InstanceReader.get_overview` (StatisticsView, SystemStatusView, UiSettingsView)."""
@@ -1145,6 +1153,7 @@ class FakePaperless:
                     document_count=count(lambda d, t=t: t.id in d.tags),
                     colour=t.colour,
                     parent=t.parent,
+                    owner=t.owner,
                 )
                 for t in state.tags
                 if t.visible_to(user)
@@ -1155,7 +1164,10 @@ class FakePaperless:
         ) -> Callable[[], list[TaxonomyItem]]:
             return lambda: [
                 TaxonomyItem(
-                    id=o.id, name=o.name, document_count=count(lambda d, o=o: link(d) == o.id)
+                    id=o.id,
+                    name=o.name,
+                    document_count=count(lambda d, o=o: link(d) == o.id),
+                    owner=o.owner,
                 )
                 for o in objects
                 if o.visible_to(user)
@@ -1173,10 +1185,14 @@ class FakePaperless:
                 for f in state.custom_fields
             ]
 
-        def names(rows: list[tuple[int, str]]) -> Callable[[], list[TaxonomyItem]]:
-            return lambda: [TaxonomyItem(id=i, name=n, document_count=None) for i, n in rows]
+        def names(
+            rows: list[tuple[int, str, int | None]],
+        ) -> Callable[[], list[TaxonomyItem]]:
+            return lambda: [
+                TaxonomyItem(id=i, name=n, document_count=None, owner=o) for i, n, o in rows
+            ]
 
-        views = [(v.id, v.name) for v in state.saved_views if v.visible_to(user)]
+        views = [(v.id, v.name, v.owner) for v in state.saved_views if v.visible_to(user)]
         kinds: dict[TaxonomyKind, Callable[[], list[TaxonomyItem]]] = {
             "tag": tags,
             "correspondent": owned(state.correspondents, lambda d: d.correspondent),
@@ -1184,8 +1200,8 @@ class FakePaperless:
             "storage_path": owned(state.storage_paths, lambda d: d.storage_path),
             "custom_field": custom_fields,
             "saved_view": names(views),
-            "user": names([(u.id, u.username) for u in state.users]),
-            "group": names([(g.id, g.name) for g in state.groups]),
+            "user": names([(u.id, u.username, None) for u in state.users]),
+            "group": names([(g.id, g.name, None) for g in state.groups]),
         }
         return kinds[kind]()
 
@@ -1520,7 +1536,7 @@ class FakePaperless:
             finished=now,
         )
         state.tasks.append(task)
-        if self._rejected(upload.content, task):
+        if self._rejected(upload.content, task) or _broken(upload.content, task):
             return task.task_id
         taken = upload.archive_serial_number is not None and any(
             d.archive_serial_number == upload.archive_serial_number for d in state.documents
@@ -2130,7 +2146,7 @@ class FakePaperless:
             finished=now,
         )
         self.state.tasks.append(task)
-        if self._rejected(upload.content, task):
+        if self._rejected(upload.content, task) or _broken(upload.content, task):
             return task.task_id
         version_id = self._next_id()
         # The fake reads no PDF: one whose pages cannot be counted is taken to have as many.
@@ -4698,6 +4714,15 @@ class FakePaperless:
 
 
 type _Match = Callable[[FakeDocument], bool]
+
+
+def _broken(content: bytes, task: FakeTask) -> bool:
+    """Fail the task of the one broken PDF the fake knows (live: no PDF of this kind is read)."""
+    if content != BROKEN_PDF:
+        return False
+    task.status = "failure"
+    task.message = f"{task.file_name}: Error occurred while consuming document"
+    return True
 
 
 def _check_edit(file: FakeFile, count: int | None, pages: Sequence[PageSlot]) -> list[int]:

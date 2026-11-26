@@ -201,14 +201,18 @@ class Parts:
         for kind in ("document_type", "correspondent"):
             value = wanted.document_type if kind == "document_type" else wanted.correspondent
             if value is not None:
-                item = await self._taxonomy.resolve(kind, value)
+                role = f"metadata {kind.replace('_', ' ')}"
+                item = await self._taxonomy.resolve(kind, value, role=role)
                 ids[kind] = item.id
                 words.append(f"{kind.replace('_', ' ')} {quoted(item.name)}")
         if wanted.created is not None:
             words.append(f"created {wanted.created}")
         tags = None
         if wanted.tags is not None:
-            tags = [await self._taxonomy.resolve("tag", value) for value in wanted.tags]
+            tags = [
+                await self._taxonomy.resolve("tag", value, role="metadata tags")
+                for value in wanted.tags
+            ]
             names = ", ".join(quoted(tag.name) for tag in tags)
             words.append(f"tags {names}" if tags else "no tags")
         edit = DocumentEdit(
