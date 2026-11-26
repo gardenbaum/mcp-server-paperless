@@ -23,13 +23,13 @@ jobs:
   e2e-shard:
     name: e2e-shard (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    # A hang guard, no quality gate: a shard takes about 15 minutes on a hosted runner (about
-    # 4300 s of tests in all, weighed on hosted runners in scripts/e2e_ci.py, split in six).
+    # A hang guard, no quality gate: split in ten, a shard takes about 10 minutes on a hosted runner.
+    # Six shards took 11 to 23 minutes on 2026-11-25 and one hit this guard (run 45670381272).
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        shard: ["1/6", "2/6", "3/6", "4/6", "5/6", "6/6"]
+        shard: ["1/10", "2/10", "3/10", "4/10", "5/10", "6/10", "7/10", "8/10", "9/10", "10/10"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
