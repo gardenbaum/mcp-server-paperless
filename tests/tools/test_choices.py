@@ -18,6 +18,9 @@ from choices import (
     FIRST,
     NO_NAMES,
     NOT_PICKED,
+    OPTION,
+    OPTION_CASES,
+    OPTIONS,
     READS,
     SECOND,
     TWIN,
@@ -26,7 +29,7 @@ from choices import (
     picks,
 )
 from confirmation import NOT_AGAIN, YES, answering, source, world
-from fakes.paperless import FakePaperless, FakeTag, FakeTaxonomy
+from fakes.paperless import FakeDocument, FakePaperless, FakeTag, FakeTaxonomy
 from fastmcp import Client, FastMCP
 from harness import serve
 from mcp import MCPError
@@ -34,9 +37,17 @@ from mcp.types import ElicitResult, InputRequiredResult, ListRootsResult
 
 from mcp_server_paperless.domain.choices import Choice, Pick, Question, note_write, picked
 from mcp_server_paperless.domain.errors import Ambiguous, PermissionDenied, UpstreamUnavailable
+from mcp_server_paperless.services.bulk_updates import CORRECT
 from mcp_server_paperless.tools import _shared
 from mcp_server_paperless.tools._shared import ANNOTATIONS, TOOL_TOOLSETS, boundary
-from mcp_server_paperless.tools.confirmation import DIALOGS, MAX_CHOICES, MAX_PICKS, Asked, Dialogs
+from mcp_server_paperless.tools.confirmation import (
+    DIALOGS,
+    MAX_CHOICES,
+    MAX_KEPT,
+    MAX_PICKS,
+    Asked,
+    Dialogs,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Iterator, Mapping
@@ -470,7 +481,13 @@ async def delete_the_twins(client: Client[FastMCPTransport]) -> None:
 @both_eras
 @pytest.mark.parametrize(
     ("tool", "arguments"),
-    [("update_document", {"document_id": 10, "tags_add": [TWIN], "create_missing_tags": True})],
+    [
+        ("update_document", {"document_id": 10, "tags_add": [TWIN], "create_missing_tags": True}),
+        (
+            "update_documents",
+            {"documents": [{"document_id": 10, "tags_add": [TWIN]}], "create_missing_tags": True},
+        ),
+    ],
 )
 async def test_when_both_matches_are_gone_no_third_one_is_created(
     mode: Mode, tool: str, arguments: Json
@@ -847,6 +864,34 @@ def test_a_state_of_a_dialog_holds_what_its_answer_needs() -> None:
         assert Asked.parse(json.dumps({**good, **wrong})) is None
 
 
+async def test_a_state_holds_at_most_so_much_of_a_collected_error() -> None:
+    """100 documents, each with an ambiguous name of 128 characters of its own."""
+    state = world()
+    items: list[Json] = []
+    for n in range(100):
+        name = f"{n:03}" + "N" * 125
+        state.tags += [FakeTag(id=1000 + 2 * n + m, name=name, owner=m) for m in range(2)]
+        state.documents.append(FakeDocument(id=2000 + n, title="Scan", owner=2))
+        items.append({"document_id": 2000 + n, "tags_add": [name]})
+    arguments: Json = {"documents": items}
+    served = server(source(state, writes=False))
+
+    plain = text(await call(served, "auto", None, "update_documents", arguments))
+    waited = text(await call(served, "legacy", picks(None).handler, "update_documents", arguments))
+    async with Client(served, elicitation_handler=NEVER) as client:
+        token = state_of(await raw(client, None, None, arguments, tool="update_documents"))
+        kept = refused(
+            await raw(client, answer("decline"), token, arguments, tool="update_documents")
+        )
+
+    assert len(plain) > 4 * MAX_KEPT
+    assert waited == f"{plain} {NOT_PICKED}"
+    assert len(token) < 16 * 1024
+    assert kept[:200] == plain[:200]
+    assert kept.endswith(f" more characters) Hint: {CORRECT} {NOT_PICKED}")
+    assert len(kept) < MAX_KEPT + 500
+
+
 async def test_a_state_stays_small() -> None:
     """Twenty matches with the longest names, after four picks."""
     state, arguments = many_names(4)
@@ -1042,13 +1087,9 @@ async def places(*, read_only: bool) -> set[tuple[str, str]]:
     return {(tool, place) for tool, place in found if place not in NO_NAMES}
 
 
-# Their items are collected into one error (PLMCP-100.2).
-LATER = {"update_documents"}
-
-
 async def test_every_place_of_a_write_tool_that_takes_a_name_has_a_case() -> None:
     covered = {(tool, place) for tool, place, _ in CASES}
-    wanted = {(tool, place) for tool, place in await places(read_only=False) if tool not in LATER}
+    wanted = await places(read_only=False)
 
     assert wanted - covered == set()
     # Beside them only keys of objects, which a schema does not show.
@@ -1123,20 +1164,41 @@ async def test_a_write_tool_asks_and_writes_what_the_call_with_the_id_writes(
     shared: Shared, tool: str, place: str, arguments: Json
 ) -> None:
     """On both eras: what is written is compared with the call that names the id."""
-    by_number = picks(SECOND)
-    expected = await shared.call("auto", by_number.handler, tool, by_id(arguments))
+    role = place.rsplit(".", maxsplit=1)[-1].replace("_", " ")
+    shown_as = "rule" if place == ".rules.value" else role
+    await writes_the_same(shared, tool, arguments, by_id(arguments), SECOND, role=shown_as)
+
+
+@pytest.mark.parametrize("option", OPTIONS)
+@pytest.mark.parametrize(
+    ("tool", "arguments"), OPTION_CASES, ids=[f"{t}-{n}" for n, (t, _) in enumerate(OPTION_CASES)]
+)
+async def test_the_picked_of_two_options_with_one_label_is_written(
+    shared: Shared, tool: str, arguments: Json, option: str
+) -> None:
+    with_id = by_id(arguments, option, OPTION)
+    await writes_the_same(shared, tool, arguments, with_id, option, role="options of 'Choice'")
+
+    shown = picks(option)
+    _ = await shared.call("auto", shown.handler, tool, arguments)
+    place = f"'{OPTION}' (option {OPTIONS.index(option) + 1} of 3)"
+    for message in shown.confirmations:
+        assert message.count(f"'{OPTION}'") == message.count(place)
+
+
+async def writes_the_same(  # noqa: PLR0913 -- one case
+    shared: Shared, tool: str, arguments: Json, with_id: Json, pick: int | str, *, role: str
+) -> None:
+    """On both eras the call asks once, and writes after `pick` what `with_id` writes."""
+    by_number = picks(pick)
+    expected = await shared.call("auto", by_number.handler, tool, with_id)
     assert by_number.questions == []
 
     for mode in MODES:
-        shown = picks(SECOND)
+        shown = picks(pick)
         done = await shared.call(mode, shown.handler, tool, arguments)
 
         assert len(shown.questions) == 1, text(done.result)
-        role = (
-            "rule"
-            if place == ".rules.value"
-            else place.rsplit(".", maxsplit=1)[-1].replace("_", " ")
-        )
         assert role in shown.questions[0]
         assert shown.confirmations == by_number.confirmations
         if tool == "restore_from_trash":  # a filter restores nothing: it names what it matches
@@ -1149,9 +1211,60 @@ async def test_a_write_tool_asks_and_writes_what_the_call_with_the_id_writes(
         plain = await shared.call(mode, None, tool, arguments)
         declined = await shared.call(mode, picks(None).handler, tool, arguments)
 
+        assert plain.result.is_error
         assert plain.writes == declined.writes == []
-        assert text(plain.result).startswith("2 ")
+        assert re.search("match '(TWIN|Open)'", text(plain.result))
         assert text(declined.result) == f"{text(plain.result)} {NOT_PICKED}"
+
+
+BATCH: Json = {
+    "documents": [
+        {"document_id": 10, "tags_add": [TWIN]},
+        {"document_id": 11, "correspondent": TWIN, "title": "New"},
+        {"document_id": 13, "title": "Other"},
+    ]
+}
+
+
+@both_eras
+async def test_the_names_of_a_batch_are_asked_one_after_the_other_and_written_once(
+    mode: Mode,
+) -> None:
+    fake, shown = source(doubled()), picks(SECOND)
+
+    result = await call(server(fake), mode, shown.handler, "update_documents", BATCH)
+
+    assert not result.is_error, text(result)
+    assert (len(shown.questions), len(shown.confirmations)) == (2, 1)
+    changed = {d.id: d for d in fake.state.documents}
+    assert (SECOND in changed[10].tags, changed[11].correspondent) == (True, SECOND)
+    assert [name for name, _, _ in fake.sent_writes] == ["update_document"] * 3
+
+
+@both_eras
+async def test_a_batch_with_another_mistake_is_not_asked(mode: Mode) -> None:
+    shown = picks(SECOND)
+    documents = cast("list[Json]", BATCH["documents"])
+    arguments: Json = {"documents": [*documents, {"document_id": 999, "title": "x"}]}
+
+    result = await call(server(reading()), mode, shown.handler, "update_documents", arguments)
+
+    assert result.is_error
+    assert shown.questions == []
+    assert "2 tags match 'TWIN'" in text(result)
+    assert "document 999: It does not exist" in text(result)
+
+
+@both_eras
+async def test_a_dry_run_of_a_batch_is_not_asked(mode: Mode) -> None:
+    shown = picks(SECOND)
+
+    result = await call(
+        server(reading()), mode, shown.handler, "update_documents", {**BATCH, "dry_run": True}
+    )
+
+    assert result.is_error
+    assert shown.questions == []
 
 
 @pytest.mark.parametrize(("tool", "place", "arguments"), CASES, ids=_titles(CASES))

@@ -296,10 +296,11 @@ async def test_hostile_text_stands_in_a_refusal_only_quoted_and_cut(tool: str) -
     assert ("(left out: " in EXCERPT.sub("", message)) == excerpts
 
 
-# The server itself caps no refusal. The owner approved 5388 on 2026-11-24 for update_documents
-# (decision-73; before 3403, update_user, which names the user and their groups and permissions many
-# times).
-WORST: Final = 5388
+# The server itself caps no refusal. The owner approved 5402 on 2026-11-26 for update_documents,
+# whose names that look alike now carry their id (PLMCP-100.2): "Grenze auf 5402" (limit to 5402).
+# Before 5388 (2026-11-24, decision-73), before that 3403, update_user, which names the user and
+# their groups and permissions many times.
+WORST: Final = 5402
 
 
 @pytest.mark.decision("decision-64")

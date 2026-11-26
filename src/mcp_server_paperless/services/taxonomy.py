@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
     from mcp_server_paperless.domain.credentials import CredentialProvider
     from mcp_server_paperless.domain.ports import TaxonomyReader
-    from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
+    from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyItem, TaxonomyKind
 
 SUGGESTIONS = 5
 
@@ -111,6 +111,41 @@ def _not_contradicted(left: Question, label: str) -> None:
     if other is not None:
         message = f"The {label} the user picked (id {other}) does not match {left.word!r} any more."
         raise Conflict(message, hint="Nothing was changed. Read the names again and ask.")
+
+
+def _place(field: TaxonomyItem, option: str) -> str:
+    ids = [o.id for o in field.select_options or ()]
+    return f"option {ids.index(option) + 1} of {len(ids)}"
+
+
+def option_shown(field: TaxonomyItem, option: str) -> str:
+    """The quoted label of an option, with its place where another one would be shown alike."""
+    shown = {o.id: quoted(o.label) for o in field.select_options or ()}
+    text = shown.get(option)
+    if text is None:
+        return quoted(option)
+    alike = [*shown.values()].count(text) > 1
+    return f"{text} ({_place(field, option)})" if alike else text
+
+
+def pick_option(
+    field: TaxonomyItem, word: str, matches: Sequence[SelectOption], *, role: str = ""
+) -> SelectOption | Question:
+    """The one match, or the one the user picked; else the question which of them is meant.
+
+    Raises:
+        Conflict: The user picked an option that does not match any more.
+    """
+    choices = tuple(Choice(o.id, quoted(o.label), detail=_place(field, o.id)) for o in matches)
+    what = f"options of {quoted(field.name)}"
+    question = Question(what, word, choices, role, about=str(field.id))
+    if len(matches) == 1:
+        if contradicts(question) is not None:
+            message = f"The option the user picked does not match {word!r} any more."
+            raise Conflict(message, hint="Nothing was changed. Read the names again and ask.")
+        return matches[0]
+    answer = picked(question)
+    return next((option for option in matches if option.id == answer), question)
 
 
 def _choice(item: TaxonomyItem) -> Choice:

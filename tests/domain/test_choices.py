@@ -123,3 +123,12 @@ async def test_a_write_in_a_task_of_the_run_counts() -> None:
             _ = group.create_task(_write())
 
     assert run.written
+
+
+def test_the_topic_of_an_object_is_its_id_whatever_it_is_called_now() -> None:
+    """A field renamed while the user chooses is still the field they chose an option of."""
+    before = Question("options of 'Status'", "open", (A, B), about="7")
+    after = dataclasses.replace(before, what="options of 'State'", choices=(A,))
+
+    assert after.topic == before.topic
+    assert dataclasses.replace(before, about="8").topic != before.topic

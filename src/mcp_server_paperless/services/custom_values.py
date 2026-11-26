@@ -14,8 +14,9 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, TypeIs
 from urllib.parse import urlsplit
 
+from mcp_server_paperless.domain.choices import Question
 from mcp_server_paperless.domain.errors import Ambiguous, NotFound, Validation
-from mcp_server_paperless.services.taxonomy import fold
+from mcp_server_paperless.services.taxonomy import fold, pick_option
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -59,12 +60,13 @@ def _select(field: TaxonomyItem, value: object) -> str:
         [o for o in options if o.id == label],
         [o for o in options if fold(o.label) == fold(label)],
     ):
-        if len(matches) == 1:
-            return matches[0].id
         if matches:
+            found = pick_option(field, label, matches)
+            if not isinstance(found, Question):
+                return found.id
             names = ", ".join(repr(o.label) for o in matches)
             message = f"Several options of {field.name!r} match {label!r}: {names}."
-            raise Ambiguous(message, hint="Pass the label exactly as listed.")
+            raise Ambiguous(message, hint="Pass the label exactly as listed.", question=found)
     message = f"{field.name!r} has no option {label!r}."
     listing = ", ".join(repr(o.label) for o in options)
     raise Validation(message, hint=f"Options: {listing}.")

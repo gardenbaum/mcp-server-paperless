@@ -14,6 +14,7 @@ from fakes.paperless import (
     seeded,
 )
 
+from mcp_server_paperless.domain.choices import picking
 from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     Ambiguous,
@@ -491,6 +492,83 @@ async def test_labels_that_differ_only_in_case_need_the_id_to_be_told_apart() ->
     assert [o.label for o in renamed.select_options] == ["x", "alpha"]
     assert by_id.select_options is not None
     assert [o.label for o in by_id.select_options] == ["y", "alpha"]
+
+
+def two_of_one_label(setup: Setup) -> None:
+    setup.state.custom_fields.append(
+        FakeCustomField(
+            id=99,
+            name="Double",
+            data_type="select",
+            select_options=(
+                SelectOption(id="one", label="Open"),
+                SelectOption(id="two", label="Open"),
+                SelectOption(id="three", label="Paid"),
+            ),
+        )
+    )
+
+
+@pytest.mark.decision("decision-109")
+@pytest.mark.parametrize("option", ["one", "two"])
+async def test_the_picked_of_two_options_with_one_label_is_renamed_or_removed(option: str) -> None:
+    setup = Setup()
+    two_of_one_label(setup)
+    with pytest.raises(Ambiguous) as raised:
+        _ = await setup.update("custom_field", "Double", options_rename={"Open": "Done"})
+    question = raised.value.question
+    assert question is not None
+    assert question.role == "select options rename"
+    assert [(c.value, c.shown) for c in question.choices] == [
+        ("one", "'Open', option 1 of 3"),
+        ("two", "'Open', option 2 of 3"),
+    ]
+
+    with picking([question.picking(option)]):
+        renamed = await setup.update("custom_field", "Double", options_rename={"Open": "Done"})
+    assert renamed.select_options is not None
+    assert [o.id for o in renamed.select_options if o.label == "Done"] == [option]
+
+
+@pytest.mark.decision("decision-109")
+async def test_a_pick_of_an_option_to_remove_is_no_confirmation() -> None:
+    setup = Setup()
+    two_of_one_label(setup)
+    with pytest.raises(Ambiguous) as raised:
+        _ = await setup.update("custom_field", "Double", options_remove=["Open"])
+    assert raised.value.question is not None
+
+    with picking([raised.value.question.picking("two")]):
+        with pytest.raises(ConfirmationRequired) as refused:
+            _ = await setup.update("custom_field", "Double", options_remove=["Open"])
+        assert "remove the option(s) 'Open' (option 2 of 3) of 'Double'" in refused.value.message
+        removed = await setup.update(
+            "custom_field", "Double", options_remove=["Open"], confirm=True
+        )
+
+    assert removed.select_options is not None
+    assert [o.id for o in removed.select_options] == ["one", "three"]
+
+
+@pytest.mark.decision("decision-109")
+async def test_two_renames_of_one_option_are_refused() -> None:
+    setup = Setup()
+    two_of_one_label(setup)
+    renames = {"Open": "Done", "two": "Closed"}
+    with pytest.raises(Ambiguous) as raised:
+        _ = await setup.update("custom_field", "Double", options_rename=renames)
+    assert raised.value.question is not None
+
+    with (
+        picking([raised.value.question.picking("two")]),
+        pytest.raises(Validation, match="An option is renamed twice"),
+    ):
+        _ = await setup.update("custom_field", "Double", options_rename=renames)
+    with pytest.raises(Validation, match="An option is renamed twice"):
+        _ = await setup.update("custom_field", "Double", options_rename={"Paid": "a", "three": "b"})
+    with picking([raised.value.question.picking("one")]):
+        done = await setup.update("custom_field", "Double", options_rename=renames)
+    assert [o.label for o in done.select_options or ()] == ["Done", "Closed", "Paid"]
 
 
 async def test_renaming_the_field_alone_leaves_its_options_alone() -> None:

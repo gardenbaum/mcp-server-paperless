@@ -15,11 +15,13 @@ whether it happened).
 import re
 from typing import TYPE_CHECKING, Final
 
+from mcp_server_paperless.domain.choices import Question
 from mcp_server_paperless.domain.documents import DocumentQuery
 from mcp_server_paperless.domain.errors import (
     Ambiguous,
     ConfirmationRequired,
     Validation,
+    first_of,
     listed,
     quoted,
 )
@@ -32,7 +34,7 @@ from mcp_server_paperless.domain.taxonomy import (
     TaxonomyValues,
 )
 from mcp_server_paperless.services.tag_hierarchy import descendants
-from mcp_server_paperless.services.taxonomy import fold, pick
+from mcp_server_paperless.services.taxonomy import fold, option_shown, pick, pick_option
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
@@ -142,19 +144,21 @@ def _unique(labels: Sequence[tuple[str, bool]], field: str) -> None:
         seen[key] = new
 
 
-def _find(options: Sequence[SelectOption], ref: str, field: str) -> SelectOption:
+def _find(item: TaxonomyItem, ref: str, role: str) -> SelectOption:
     """The option ``ref`` names: its label, its id, or its label ignoring case and accents."""
-    for found in (
+    options, field = item.select_options or (), item.name
+    for matches in (
         [o for o in options if o.label == ref],
         [o for o in options if o.id == ref],
         [o for o in options if fold(o.label) == fold(ref)],
     ):
-        if len(found) == 1:
-            return found[0]
-        if found:
+        if matches:
+            found = pick_option(item, ref, matches, role=role)
+            if not isinstance(found, Question):
+                return found
             message = f"Several options of {field!r} match {ref!r}."
             hint = "Pass the id of the option; list_taxonomy(kind='custom_field') shows the ids."
-            raise Ambiguous(message, hint=hint)
+            raise Ambiguous(message, hint=hint, question=found)
     message = f"{field!r} has no option {ref!r}."
     listing = ", ".join(repr(o.label) for o in options)
     raise Validation(message, hint=f"Options: {listing}.")
@@ -289,16 +293,19 @@ class TaxonomyEditor:
             raise Validation(message, hint="Options belong to custom fields of data type select.")
         current = field.select_options or ()
         renamed = {
-            _find(current, ref, field.name).id: _label(label)
-            for ref, label in edit.options_rename.items()
+            ref: _find(field, ref, "select options rename").id for ref in edit.options_rename
         }
-        removed = {_find(current, ref, field.name).id for ref in edit.options_remove}
-        if renamed.keys() & removed:
+        if len({*renamed.values()}) < len(renamed):
+            message = "An option is renamed twice."
+            raise Validation(message, hint="Give each option one new label.")
+        labels = {number: _label(edit.options_rename[ref]) for ref, number in renamed.items()}
+        removed = {_find(field, ref, "select options remove").id for ref in edit.options_remove}
+        if labels.keys() & removed:
             message = "An option cannot be both renamed and removed."
             raise Validation(message, hint="Rename it or remove it, not both.")
         added = [_label(label) for label in edit.options_add]
         kept = [
-            (option.id, renamed.get(option.id, option.label))
+            (option.id, labels.get(option.id, option.label))
             for option in current
             if option.id not in removed
         ]
@@ -308,9 +315,9 @@ class TaxonomyEditor:
             raise Validation(message, hint="Keep at least one option or add a new one.")
         if removed and not edit.confirm:
             holding = await self._holding(field, removed)
-            gone = [o.label for o in current if o.id in removed]
+            gone = [option_shown(field, o.id) for o in current if o.id in removed]
             effect = (
-                f"remove the option(s) {listed(gone)} of {quoted(field.name)}: "
+                f"remove the option(s) {first_of(gone)} of {quoted(field.name)}: "
                 f"{documents(holding)} you can see that hold a removed option lose their value for "
                 "this field, which Paperless clears shortly after"
             )

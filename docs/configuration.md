@@ -132,7 +132,8 @@ Where a name in a write matches several objects, a client that can show dialogs 
 one you mean: you see name, id, number of documents and owner of up to 20 matches. The call goes on
 only with your pick. If you pick none, nothing changes, and the assistant gets the list of matches
 and is told to ask you. A pick confirms nothing: what needs a confirmation asks for it afterwards.
-Reading tools and previews (`dry_run`) do not ask; they list the matches.
+Reading tools and previews (`dry_run`) do not ask; they list the matches. The same holds for the
+options of a select field that have one label.
 
 Which clients were seen to show the dialog: none yet. According to their documentation
 [Claude Code](https://code.claude.com/docs/en/mcp) and

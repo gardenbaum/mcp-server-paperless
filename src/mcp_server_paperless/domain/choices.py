@@ -76,8 +76,8 @@ class Question:
 
     @property
     def topic(self) -> str:
-        """Identifies what was asked, whatever matches it."""
-        return _hashed((self.what, self.word, self.role, self.about))
+        """Identifies what was asked, whatever matches it; an object by its id, not its name."""
+        return _hashed((self.about or self.what, self.word, self.role, self.about))
 
     @property
     def fingerprint(self) -> str:
