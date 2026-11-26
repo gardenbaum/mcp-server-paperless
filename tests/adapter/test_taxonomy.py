@@ -26,6 +26,7 @@ CORRESPONDENT: Json = {
     "slug": "e2e-acme",
     "name": "e2e-acme",
     **OWNED,
+    "owner": 3,
     "document_count": 1,
     "last_correspondence": "2026-11-11",
     "permissions": {},
@@ -117,7 +118,7 @@ CASES: list[tuple[TaxonomyKind, str, list[Json], list[TaxonomyItem]]] = [
         "correspondent",
         "/api/correspondents/",
         [CORRESPONDENT],
-        [row(id=1, name="e2e-acme", document_count=1)],
+        [row(id=1, name="e2e-acme", document_count=1, owner=3)],
     ),
     (
         "document_type",
@@ -149,7 +150,7 @@ CASES: list[tuple[TaxonomyKind, str, list[Json], list[TaxonomyItem]]] = [
             row(id=7, name="e2e-monetary", document_count=1, data_type="monetary"),
         ],
     ),
-    ("saved_view", "/api/saved_views/", [SAVED_VIEW], [row(id=1, name="e2e-view")]),
+    ("saved_view", "/api/saved_views/", [SAVED_VIEW], [row(id=1, name="e2e-view", owner=2)]),
     ("user", "/api/users/", [USER], [row(id=3, name="e2e-reader")]),
     ("group", "/api/groups/", [GROUP], [row(id=1, name="e2e-group")]),
 ]

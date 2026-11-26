@@ -22,10 +22,10 @@ from mcp_server_paperless.domain.bulk import (
     SetPermissions,
     TaxonomyBulkReport,
 )
-from mcp_server_paperless.domain.errors import ConfirmationRequired, Validation, listed
+from mcp_server_paperless.domain.errors import ConfirmationRequired, Validation, first_of, listed
 from mcp_server_paperless.services.principals import resolve_principals
 from mcp_server_paperless.services.tag_hierarchy import descendants
-from mcp_server_paperless.services.taxonomy import pick
+from mcp_server_paperless.services.taxonomy import names_apart, pick
 from mcp_server_paperless.services.taxonomy_edits import LABELS
 from mcp_server_paperless.services.taxonomy_edits import documents as count_documents
 
@@ -106,9 +106,16 @@ class BulkTaxonomyEditor:
             raise Validation(message, hint=hint)
         grants = None if isinstance(operation, DeleteItems) else await self._grants(operation)
         rows = await self._reader.list_taxonomy(kind)
-        chosen = list({row.id: row for row in (pick(kind, rows, item) for item in items)}.values())
+        chosen = list(
+            {
+                row.id: row for row in (pick(kind, rows, item, role="items") for item in items)
+            }.values()
+        )
         label = LABELS[kind]
-        subject = f"{len(chosen)} {_plural(len(chosen), label)} {listed([r.name for r in chosen])}"
+        shown = names_apart(rows)
+        subject = (
+            f"{len(chosen)} {_plural(len(chosen), label)} {first_of([shown[r.id] for r in chosen])}"
+        )
         below = _below(kind, rows, chosen) if grants is None else []
         if grants is None:
             tail = f"{subject} for good: {_uses(kind, chosen, below)}"
@@ -170,7 +177,9 @@ class BulkTaxonomyEditor:
         fields: dict[str, object] = {"merge": operation.merge}
         owner = ""
         if operation.owner is not None:
-            who = await resolve_principals(self._resolver, "user", [operation.owner])
+            who = await resolve_principals(
+                self._resolver, "user", [operation.owner], role="operation owner"
+            )
             fields["owner"], owner = who.ids[0], f"set the owner to {who.names[0]}"
         if operation.clear_owner:
             fields["owner"] = None
@@ -181,7 +190,10 @@ class BulkTaxonomyEditor:
             lists: dict[str, tuple[int, ...]] = {}
             for name, principal in GRANT_LISTS:
                 who = await resolve_principals(
-                    self._resolver, principal, getattr(operation, name) or []
+                    self._resolver,
+                    principal,
+                    getattr(operation, name) or [],
+                    role=f"operation {name.replace('_', ' ')}",
                 )
                 lists[name] = who.ids
                 if getattr(operation, name) is not None or not operation.merge:

@@ -87,6 +87,17 @@ async def test_a_restricted_user_sees_only_shared_objects(backend: Backend) -> N
     assert {"e2e-finance", "e2e-invoices", "e2e-inbox"} <= set(reader)
 
 
+@pytest.mark.contract(CONTRACT)
+@pytest.mark.decision("decision-109")
+async def test_owned_kinds_carry_their_owner_and_the_others_none(backend: Backend) -> None:
+    reader = backend.admin.taxonomy
+    users = by_name(await reader.list_taxonomy("user"))
+
+    assert by_name(await reader.list_taxonomy("tag"))["e2e-private"].owner == users["admin"].id
+    for kind in ("user", "group", "custom_field"):
+        assert {row.owner for row in await reader.list_taxonomy(kind)} == {None}
+
+
 @pytest.mark.parametrize("kind", ["saved_view", "user", "group"])
 @pytest.mark.contract(CONTRACT)
 async def test_a_kind_without_the_view_permission_is_denied(

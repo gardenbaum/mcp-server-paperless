@@ -174,11 +174,11 @@ class UploadService:
             "storage_path": metadata.storage_path,
         }
         ids = {
-            kind: (await self._taxonomy.resolve(kind, value)).id
+            kind: (await self._taxonomy.resolve(kind, value, role=kind.replace("_", " "))).id
             for kind, value in references.items()
             if value is not None
         }
-        tags = [(await self._taxonomy.resolve("tag", tag)).id for tag in metadata.tags]
+        tags = [(await self._taxonomy.resolve("tag", tag, role="tags")).id for tag in metadata.tags]
         resolved = await resolve_values(self._taxonomy, metadata.custom_fields)
         await require_visible(
             self._reader,

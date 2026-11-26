@@ -89,49 +89,66 @@ async def messages(response: httpx2.Response) -> AsyncGenerator[Json]:
 class Handshake:
     """One session of a client up to 2025-11-25."""
 
-    def __init__(self, http: httpx2.AsyncClient, url: str, session: str, token: str) -> None:
+    def __init__(
+        self,
+        http: httpx2.AsyncClient,
+        url: str,
+        session: str,
+        token: str,
+        *,
+        version: str = HANDSHAKE,
+    ) -> None:
         self.http: httpx2.AsyncClient = http
         self.url: str = url
         self.session: str = session
         self.token: str = token
+        self.version: str = version
         self.number: int = 1
 
     @staticmethod
-    def headers(token: str, session: str | None = None) -> dict[str, str]:
+    def headers(
+        token: str, session: str | None = None, *, version: str = HANDSHAKE
+    ) -> dict[str, str]:
         given = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/json, text/event-stream",
-            "MCP-Protocol-Version": HANDSHAKE,
+            "MCP-Protocol-Version": version,
         }
         return given | ({"Mcp-Session-Id": session} if session else {})
 
     @classmethod
     async def open(
-        cls, http: httpx2.AsyncClient, url: str, capabilities: Json = FORMS, token: str = ANNA
+        cls,
+        http: httpx2.AsyncClient,
+        url: str,
+        capabilities: Json = FORMS,
+        token: str = ANNA,
+        *,
+        version: str = HANDSHAKE,
     ) -> Handshake:
         params = {
-            "protocolVersion": HANDSHAKE,
+            "protocolVersion": version,
             "capabilities": capabilities,
             "clientInfo": {"name": "t", "version": "1"},
         }
         body = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": params}
-        response = await http.post(url, headers=cls.headers(token), json=body)
-        session = cls(http, url, response.headers["mcp-session-id"], token)
+        response = await http.post(url, headers=cls.headers(token, version=version), json=body)
+        session = cls(http, url, response.headers["mcp-session-id"], token, version=version)
         _ = await session.send({"method": "notifications/initialized"})
         return session
 
     async def send(self, message: Json, token: str | None = None) -> httpx2.Response:
-        headers = self.headers(token or self.token, self.session)
+        headers = self.headers(token or self.token, self.session, version=self.version)
         return await self.http.post(self.url, headers=headers, json={"jsonrpc": "2.0", **message})
 
     def call(
-        self, arguments: Json = NOTE, **more: object
+        self, arguments: Json = NOTE, *, tool: str = "delete_note", **more: object
     ) -> contextlib.AbstractAsyncContextManager[httpx2.Response]:
         """A tools/call whose response stream the caller reads."""
         self.number += 1
-        params = {"name": "delete_note", "arguments": arguments, **more}
+        params = {"name": tool, "arguments": arguments, **more}
         body = {"jsonrpc": "2.0", "id": self.number, "method": "tools/call", "params": params}
-        headers = self.headers(self.token, self.session)
+        headers = self.headers(self.token, self.session, version=self.version)
         return self.http.stream("POST", self.url, headers=headers, json=body)
 
     async def finish(self, reply: Json | None, **more: object) -> tuple[bool, str]:
@@ -163,10 +180,12 @@ async def sessionless(  # noqa: PLR0913 -- one keyword per part of the wire form
     state: object = None,
     answer: Json | None = None,
     arguments: Json = NOTE,
+    tool: str = "delete_note",
+    key: str = "confirm",
 ) -> Json:
     """The response message of one 2026-07-28 round."""
     params: Json = {
-        "name": "delete_note",
+        "name": tool,
         "arguments": arguments,
         "_meta": {
             f"{META}protocolVersion": SESSIONLESS,
@@ -177,13 +196,13 @@ async def sessionless(  # noqa: PLR0913 -- one keyword per part of the wire form
     if state is not None:
         params["requestState"] = state
     if answer is not None:
-        params["inputResponses"] = {"confirm": answer}
+        params["inputResponses"] = {key: answer}
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json, text/event-stream",
         "MCP-Protocol-Version": SESSIONLESS,
         "Mcp-Method": "tools/call",
-        "Mcp-Name": "delete_note",
+        "Mcp-Name": tool,
     }
     body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params}
     async with http.stream("POST", url, headers=headers, json=body) as response:

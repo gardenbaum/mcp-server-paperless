@@ -9,12 +9,14 @@ calls on ``Services``. The registry tests
 
 import base64
 import functools
+import inspect
 import logging
 from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING, Annotated, Final, Protocol, cast
 
 from fastmcp.exceptions import ResourceError, ToolError
+from fastmcp.server.dependencies import get_context
 from fastmcp.tools import ToolResult
 from mcp.types import (
     BlobResourceContents,
@@ -34,9 +36,11 @@ from mcp_server_paperless.domain.errors import (
     NotConfirmed,
     PaperlessMcpError,
     Validation,
+    quoted,
 )
 from mcp_server_paperless.domain.selection import NO_FLAG, Selection, SelectionFilters
-from mcp_server_paperless.tools.confirmation import confirmed
+from mcp_server_paperless.services.principals import names_of
+from mcp_server_paperless.tools.confirmation import Picker, confirmed
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping
@@ -1306,10 +1310,32 @@ def _place(error: BaseException) -> dict[str, str]:
     return {"at": error_place(error).removeprefix(" at ")}
 
 
+def asking_title(tool: Callable[..., object], arguments: Mapping[str, object]) -> str | None:
+    """The title of a tool whose user may be asked to pick: it writes, and this is no dry run."""
+    name = tool.__name__
+    hints = ANNOTATIONS.get(name) or LOCAL_ANNOTATIONS.get(name)
+    if hints is None or hints.read_only_hint is not False:
+        return None
+    dry_run = inspect.signature(tool).parameters.get("dry_run")
+    if dry_run and arguments.get("dry_run", cast("object", dry_run.default)) is not False:
+        return None
+    return hints.title
+
+
+async def _owner_names(ids: set[int]) -> dict[int, str]:
+    """The quoted names of users; without those that cannot be read."""
+    try:
+        names = await names_of(services(get_context()).taxonomy, "user", sorted(ids))
+    except PaperlessMcpError:
+        return {}
+    return {number: quoted(name) for number, name in names.items() if name != f"#{number}"}
+
+
 def boundary[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
     """The boundary of a tool: confirmation dialogs, and every exception as a ``ToolError``.
 
-    A tool that needs a confirmation runs again once the user gave it in a dialog (``confirmed``).
+    A tool that needs a confirmation, or a pick among the matches of a name, runs again once the
+    user gave it in a dialog (``confirmed``).
 
     A domain error's message and hint are client-safe by contract and reach the client. Any
     other exception is a bug: the client gets a generic message, and the log at ERROR gets only
@@ -1322,7 +1348,9 @@ def boundary[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R
     @functools.wraps(tool)
     async def guarded(*args: P.args, **kwargs: P.kwargs) -> R:
         try:
-            return await confirmed(tool, *args, **kwargs)
+            title = asking_title(tool, kwargs)
+            picker = Picker(title, _owner_names) if title else None
+            return await confirmed(tool, picker, *args, **kwargs)
         except ToolError:
             raise
         except (ConfirmationRequired, NotConfirmed) as refusal:

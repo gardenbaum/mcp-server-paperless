@@ -1093,7 +1093,7 @@ class WorkflowService:
     def pick_from(workflows: Sequence[Workflow], workflow: NameOrId) -> Workflow:
         """The one of ``workflows`` that ``workflow`` names; see ``pick``."""
         rows = [TaxonomyItem(id=w.id, name=w.name, document_count=None) for w in workflows]
-        wanted = pick("workflow", rows, workflow, listing="list_workflows").id
+        wanted = pick("workflow", rows, workflow, listing="list_workflows", role="workflow").id
         return next(w for w in workflows if w.id == wanted)
 
     @staticmethod
@@ -1147,11 +1147,13 @@ class WorkflowService:
                 hint=("Change the other settings, or edit the actions in the Paperless web UI."),
             )
 
-    async def _id(self, kind: TaxonomyKind, value: NameOrId) -> int:
-        return (await self._taxonomy.resolve(kind, value)).id
+    async def _id(self, kind: TaxonomyKind, value: NameOrId, role: str) -> int:
+        return (await self._taxonomy.resolve(kind, value, role=role)).id
 
-    async def _ids(self, kind: TaxonomyKind, values: Sequence[NameOrId]) -> list[JsonValue]:
-        ids = [await self._id(kind, value) for value in values]
+    async def _ids(
+        self, kind: TaxonomyKind, values: Sequence[NameOrId], role: str
+    ) -> list[JsonValue]:
+        ids = [await self._id(kind, value, role) for value in values]
         return [*dict.fromkeys(ids)]
 
     async def _setting(self, name: str, field: Field_, value: object) -> JsonValue:
@@ -1170,10 +1172,11 @@ class WorkflowService:
             return _lookup(MATCHING_ALGORITHMS, "matching algorithm", cast("int | str", value))
         if name in TEXT_CHECKS:
             return TEXT_CHECKS[name](cast("str", value))
+        role = name.replace("_", " ")
         if field.kind is not None and field.shape == "list":
-            return await self._ids(field.kind, cast("list[NameOrId]", value))
+            return await self._ids(field.kind, cast("list[NameOrId]", value), role)
         if field.kind is not None:
-            return await self._id(field.kind, cast("NameOrId", value))
+            return await self._id(field.kind, cast("NameOrId", value), role)
         if name == "ai_suggestion_fields":
             value = [*dict.fromkeys(cast("list[str]", value))]
         return cast("JsonValue", value)
@@ -1278,7 +1281,8 @@ class WorkflowService:
             return cast("JsonValue", hook)
         if name == "assign_custom_fields_values":
             fields = cast("dict[str, JsonValue]", value)
-            return {str(await self._id("custom_field", k)): v for k, v in fields.items()}
+            role = name.replace("_", " ")
+            return {str(await self._id("custom_field", k, role)): v for k, v in fields.items()}
         return await self._setting(name, field, value)
 
     @staticmethod

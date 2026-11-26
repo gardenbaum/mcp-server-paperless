@@ -79,6 +79,7 @@ class _Row(BaseModel):
     is_insensitive: bool | None = None
     is_inbox_tag: bool | None = None
     path: str | None = None
+    owner: int | None = None
 
 
 class _Template(BaseModel):
@@ -104,6 +105,7 @@ def _item(kind: TaxonomyKind, row: _Row) -> TaxonomyItem:
             if row.data_type == "select"
             else None
         ),
+        owner=row.owner,
     )
 
 
