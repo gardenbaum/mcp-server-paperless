@@ -32,7 +32,11 @@ FROM python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916
 # image on fixed HIGH findings), and no pip: the server runs from /app/.venv and needs neither pip
 # nor the copies of msgpack and urllib3 vendored in it, which the scan reports. Nothing can
 # install packages into the running container afterwards.
-RUN apt-get update \
+# The workflow sets APT_REFRESH to the day of the build, so the upgrade never comes from a build
+# cache older than a day (the cache had kept a libzstd1 that Debian had already fixed).
+ARG APT_REFRESH=none
+RUN echo "packages of ${APT_REFRESH}" \
+    && apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/lib/python3.14/ensurepip \

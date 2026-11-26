@@ -6,6 +6,10 @@ name: Image
 # to GHCR, from the `publish` and `tag` jobs, the only ones allowed to write packages. Nothing
 # publishes on a branch or a pull request.
 on:
+  # Daily on main: Debian fixes reach the build cache, and a new finding of the scan shows up within
+  # a day even when nothing is merged. Only the build job runs; nothing is published.
+  schedule:
+    - cron: "23 5 * * *"
   push:
     branches: [main]
     tags: ["v*"]
@@ -49,6 +53,10 @@ jobs:
         with:
           persist-credentials: false
 
+      # The day of the build (Dockerfile, APT_REFRESH): the package upgrade is at most a day old.
+      - id: day
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build the image (loaded locally, not pushed)
@@ -61,6 +69,7 @@ jobs:
           tags: mcp-server-paperless:ci
           build-args: |
             REVISION=${{ github.sha }}
+            APT_REFRESH=${{ steps.day.outputs.day }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
@@ -95,6 +104,8 @@ jobs:
           load: true
           push: false
           tags: mcp-server-paperless-stdio:ci
+          build-args: |
+            APT_REFRESH=${{ steps.day.outputs.day }}
           cache-from: type=gha,scope=${{ matrix.arch }}
 
       # The scan above covers the stdio target only while both have the same filesystem.
@@ -163,6 +174,10 @@ jobs:
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
           git merge-base --is-ancestor "$TAGGED_SHA" origin/main
 
+      # The day of the build (Dockerfile, APT_REFRESH): the package upgrade is at most a day old.
+      - id: day
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
@@ -193,6 +208,7 @@ jobs:
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             REVISION=${{ github.sha }}
+            APT_REFRESH=${{ steps.day.outputs.day }}
           provenance: mode=max
           sbom: true
           cache-from: type=gha,scope=${{ matrix.arch }}
