@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T17:37:40Z'
-updated_date: '2026-11-25T18:26:30Z'
+updated_date: '2026-11-26T10:00:17Z'
 labels:
   - tools
 dependencies:
@@ -50,4 +50,6 @@ Second part of PLMCP-100 (design-plmcp-100.md, approved with all recommendations
 
 <!-- SECTION:NOTES:BEGIN -->
 Red first: the new tests were written before they ran, with the code; then run against the source of part 1 in an archive copy: 40 failed (service and tool), green with the code. Workflow actions store option values as given and resolve no label (unchanged, outside this task). upload_documents already asked with part 1, because the metadata is resolved once for the whole batch.
+
+Limit changed, owner 2026-11-26, verbatim: "Grenze auf 5402" (translation: "limit to 5402"), answering whether WORST in tests/tools/test_confirmation_text.py may go from 5388 (decision-73) to 5402: tags whose names look alike once cut now carry their id, which makes the worst refusal of update_documents 14 characters longer. Codex review of c754c431: the topic of an option question was the field name too, so a field renamed while the user chose was another topic; it is now the field id alone.
 <!-- SECTION:NOTES:END -->
