@@ -90,6 +90,9 @@ jobs:
       - name: Test the renderer on Windows
         run: uv run pytest tests/rendering tests/services/test_pages.py --no-cov
 
+      - name: Test that the server starts on Windows
+        run: uv run pytest tests/test_start.py tests/test_cli.py --no-cov
+
   audit:
     runs-on: ubuntu-latest
     steps:

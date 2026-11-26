@@ -41,7 +41,8 @@ if TYPE_CHECKING:
 MAX_ENTRIES: Final = 10_000
 # Levels of subdirectories; each holds a descriptor while what is below it is read.
 MAX_DEPTH: Final = 32
-DIRECTORY: Final = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_DIRECTORY", 0)
+# Not on Windows, where nothing is opened with them (SECURE), but this is imported.
+DIRECTORY: Final = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_DIRECTORY", 0)
 NO_LINK: Final = getattr(os, "O_NOFOLLOW", 0)
 # The escapes of ``shown_path``, and any other backslash.
 ESCAPE: Final = re.compile(
