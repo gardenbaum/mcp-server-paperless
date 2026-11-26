@@ -158,6 +158,7 @@ def test_a_free_standard_descriptor_is_taken_only_while_a_higher_one_is_found(
     """The same as above in this process, where os.dup gives what the test wants."""
     given = iter([1, 2, 7])
     closed: list[int] = []
+
     def dup(_descriptor: int) -> int:
         return next(given)
 
