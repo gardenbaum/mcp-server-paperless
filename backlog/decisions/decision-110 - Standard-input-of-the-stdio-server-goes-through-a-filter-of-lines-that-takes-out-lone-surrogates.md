@@ -1,12 +1,14 @@
 ---
-updated_date: '2026-11-25T18:34:10Z'
+updated_date: '2026-11-26T09:12:14Z'
 id: decision-110
 title: >-
   Standard input of the stdio server goes through a filter of lines that takes
   out lone surrogates
 date: '2026-11-25T18:22:15Z'
-status: proposed
+status: accepted
 ---
+Accepted by the owner on 2026-11-26: "Bitte fixe 190 und 189 und merge danach." (Please fix 190 and 189 and merge them afterwards.)
+
 ## Context
 
 <!-- SECTION:CONTEXT:BEGIN -->
@@ -20,6 +22,8 @@ A lone surrogate (half of a character outside the basic plane) is no text UTF-8 
 - A line the parser rejects today is never run. A line changes only if the escape of a lone surrogate is the one reason why it is rejected: it is decoded as the SDK decodes it (UTF-8, other bytes become U+FFFD), and with U+FFFD for the escape the same parser takes it. Every other line is handed on byte for byte, also a broken one, one with a carriage return inside (where the SDK ends a line), a notification, an answer, and a request whose id holds the surrogate: they have no answer, as before.
 - A call of a tool becomes the same call with the single argument `mcp-server-paperless/refused-text`, which says where the text was (at most 100 characters), wherever in the message it was: in the arguments, the name or `_meta`. The middleware `TextRefusal` refuses it as on every other transport, before arguments are validated. A caller who sends that argument only refuses a call of their own.
 - Any other request (prompts, resources) becomes one with a method nobody has, whose name is the reason: "Method not found" with that name as its data. It keeps its id and `_meta`.
+- A refused line keeps nothing but `jsonrpc`, `id`, `method` and `params`: an `error` or a `result` beside the method would make it the answer to a question the server asked.
+- The duplicate of descriptor 0 is never one of 0 to 2, which a child process would inherit (with stderr closed, `os.dup` would give 2).
 - The SDK points descriptor 0 at the null device, so that child processes cannot read the messages, only if `sys.stdin` is that descriptor. With the filter it is not, so the filter does the same, and undoes it at the end.
 <!-- SECTION:DECISION:END -->
 

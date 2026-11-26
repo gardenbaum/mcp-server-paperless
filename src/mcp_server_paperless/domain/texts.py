@@ -99,4 +99,6 @@ def _refusal(message: _Object, given: _Object) -> bytes | None:
     else:
         meta = {"_meta": params["_meta"]} if "_meta" in params else {}
         changed = {"method": REFUSED_METHOD, "params": meta}
-    return json.dumps({**message, **changed}).encode() + b"\n"
+    # Nothing else is kept: an error or a result beside the method would answer what was asked.
+    kept = {"jsonrpc": message.get("jsonrpc"), "id": number, "method": method, "params": params}
+    return json.dumps({**kept, **changed}).encode() + b"\n"

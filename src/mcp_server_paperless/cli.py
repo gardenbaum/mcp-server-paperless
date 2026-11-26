@@ -98,6 +98,18 @@ class _Input(io.TextIOWrapper):
         """Nothing: closing waits for the thread that reads, for ever if no input comes (Ctrl-C)."""
 
 
+def _above_standard(descriptor: int) -> int:
+    """A duplicate of ``descriptor`` that is none of 0 to 2, which a child process would get."""
+    low: list[int] = []
+    copy = os.dup(descriptor)
+    while copy <= 2:  # noqa: PLR2004 -- the standard descriptors
+        low.append(copy)
+        copy = os.dup(descriptor)
+    for number in low:
+        os.close(number)
+    return copy
+
+
 @contextlib.contextmanager
 def parseable_stdin() -> Generator[None]:
     """Standard input with every message the SDK's parser would drop in a form it takes.
@@ -106,7 +118,7 @@ def parseable_stdin() -> Generator[None]:
     that buffer is the descriptor's own, so this does.
     """
     given = sys.stdin
-    private = os.dup(0)
+    private = _above_standard(0)
     with Path(os.devnull).open("rb") as nothing:
         _ = os.dup2(nothing.fileno(), 0)
     source = os.fdopen(private, "rb", closefd=False)

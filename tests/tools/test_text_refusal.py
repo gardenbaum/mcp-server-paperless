@@ -25,7 +25,7 @@ from test_confirmation_http import ANNA, META, SESSIONLESS, Handshake, app, runn
 from mcp_server_paperless.domain.texts import REFUSED_TEXT
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterator
+    from collections.abc import Generator, Iterable, Iterator
 
 pytestmark = pytest.mark.anyio
 
@@ -286,7 +286,7 @@ class Wire:
     def ask(self, message: Json) -> Json:
         self.send(json.dumps(message).encode())
         assert self.process.stdout
-        for line in self.process.stdout:
+        for line in cast("Iterable[bytes]", self.process.stdout):
             answer = cast("Json", json.loads(line))
             self.seen.add(answer.get("id"))
             if answer.get("id") == message["id"]:
@@ -396,7 +396,7 @@ server = FastMCP("holding")
 
 @server.tool
 async def hold(ctx: Context) -> str:
-    answer = await ctx.elicit("go on?", None)
+    answer = await ctx.elicit("go on?", bool)
     return answer.action
 
 run_stdio(server)
@@ -407,7 +407,7 @@ run_stdio(server)
 def test_what_the_sdk_rejects_resolves_no_question_over_stdio() -> None:
     """With an error beside the method, the refused line was the answer to a pending question."""
     start = cast("Json", START["params"])
-    hello = {**START, "params": {**start, "capabilities": {"elicitation": {}}}}
+    hello: Json = {**START, "params": {**start, "capabilities": {"elicitation": {}}}}
     with subprocess.Popen(  # noqa: S603 -- this interpreter and a script of this file
         [sys.executable, "-c", HOLD],
         stdin=subprocess.PIPE,
@@ -425,7 +425,7 @@ def test_what_the_sdk_rejects_resolves_no_question_over_stdio() -> None:
             assert process.stdout
             question: Json = {}
             while question.get("method") != "elicitation/create":
-                question = cast("Json", json.loads(process.stdout.readline()))
+                question = cast("Json", json.loads(cast("bytes", process.stdout.readline())))
             hybrid: Json = {"jsonrpc": "2.0", "id": question["id"], "x": BAD}
             for more in (
                 {"method": "x", "params": {}, "error": {"code": 1, "message": "boo"}},
@@ -436,7 +436,7 @@ def test_what_the_sdk_rejects_resolves_no_question_over_stdio() -> None:
             wire.send(json.dumps({**answer, "result": {"action": "decline"}}).encode())
             told: Json = {}
             while told.get("id") != "held":
-                told = cast("Json", json.loads(process.stdout.readline()))
+                told = cast("Json", json.loads(cast("bytes", process.stdout.readline())))
             assert process.stdin
             process.stdin.close()
         finally:
