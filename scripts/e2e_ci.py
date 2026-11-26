@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import TextIO
 
 # The number of parallel jobs of the full run. Its matrix lists the same shards (a test checks it).
-SHARDS = 6
+SHARDS = 10
 
 # Seconds per module on a hosted runner (ubuntu-latest, 4 vCPUs): the median of four e2e-full
 # runs of 2026-11-24 (PLMCP-115, decision-76): 45460920436, 45467934032, 45467975266, 45475116464.
