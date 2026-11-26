@@ -90,6 +90,9 @@ jobs:
       - name: Test the renderer on Windows
         run: uv run pytest tests/rendering tests/services/test_pages.py --no-cov
 
+      - name: Test the lines of standard input on Windows (decision-110)
+        run: uv run pytest tests/domain/test_texts.py --no-cov
+
       - name: Test that the server starts on Windows
         run: uv run pytest tests/test_start.py tests/test_cli.py --no-cov
 

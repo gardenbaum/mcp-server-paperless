@@ -1,0 +1,446 @@
+"""Every tool refuses a lone surrogate wherever it takes text, and sends nothing (PLMCP-118).
+
+The places come from the schemas the server offers, so a new tool or argument is in the sweep. Only
+the place itself is filled: a tool that did not refuse first would name its missing arguments.
+"""
+
+import contextlib
+import json
+import re
+import subprocess
+import sys
+import threading
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+import httpx2
+import observation
+import pytest
+from fakes.paperless import FakePaperless, seeded
+from fastmcp import Client, FastMCP
+from harness import serve
+from mcp.types import TextContent, Tool
+from test_confirmation_http import ANNA, META, SESSIONLESS, Handshake, app, running
+
+from mcp_server_paperless.domain.texts import REFUSED_TEXT
+
+if TYPE_CHECKING:
+    from collections.abc import Generator, Iterable, Iterator
+
+pytestmark = pytest.mark.anyio
+
+type Json = dict[str, object]
+
+BAD = "a\ud800b"
+BAD_KEY = re.compile(re.escape(f"{BAD!r}: "))
+REASON = "is not valid text. Hint: Give the "
+
+
+def places(schema: Json, defs: Json) -> Iterator[object]:
+    """A value for each place of ``schema`` that takes free text, with a lone surrogate there."""
+    if "$ref" in schema:
+        yield from places(cast("Json", defs[str(schema["$ref"]).rsplit("/", 1)[-1]]), defs)
+        return
+    options = [
+        s for key in ("anyOf", "oneOf", "allOf") for s in cast("list[Json]", schema.get(key, []))
+    ]
+    for option in options:
+        yield from places(option, defs)
+    if options or "enum" in schema or "const" in schema:
+        return
+    match schema.get("type"):
+        case "string":
+            yield BAD
+        case "array":
+            yield from ([v] for v in places(cast("Json", schema.get("items", {})), defs))
+        case "object":
+            yield from in_object(schema, defs)
+        case None:  # takes anything
+            yield from (BAD, [BAD], {"key": [BAD]}, {BAD: 1})
+        case _:
+            pass
+
+
+def in_object(schema: Json, defs: Json) -> Iterator[Json]:
+    for name, part in cast("dict[str, Json]", schema.get("properties", {})).items():
+        yield from ({name: value} for value in places(part, defs))
+    more = schema.get("additionalProperties", False)
+    if more is not False:
+        yield {BAD: 1}
+        inner = cast("Json", more) if isinstance(more, dict) else {}
+        yield from ({"key": value} for value in places(inner, defs))
+
+
+def calls(tools: list[tuple[str, Json]]) -> list[tuple[str, Json]]:
+    return [
+        (name, arguments)
+        for name, schema in tools
+        for arguments in in_object(schema, cast("Json", schema.get("$defs", {})))
+    ]
+
+
+def server(*, stdio: bool = False, root: str = "") -> FastMCP:
+    """The whole surface; over stdio with the variants that read and save local files."""
+    dirs = [root] if stdio else []
+    fake = FakePaperless(seeded(), user="admin", allow_writes=True)
+    fake.state.ai_enabled = True
+    return serve(fake, toolsets=["all"], stdio=stdio, upload_dirs=dirs, download_dirs=dirs)
+
+
+def surface(tools: list[Tool]) -> list[tuple[str, Json]]:
+    return [(tool.name, tool.input_schema) for tool in tools]
+
+
+async def unrefused(offered: FastMCP) -> list[str]:
+    """What did not refuse with the reason, or asked Paperless for something."""
+    before = observation.RECORDING
+    observation.RECORDING = True
+    found: list[str] = []
+    try:
+        async with Client(offered) as client:
+            for name, arguments in calls(surface(await client.list_tools())):
+                observation.PORT_CALLS.clear()
+                if BAD_KEY.search(repr(arguments)):
+                    continue  # the client library cannot send such a name; the wire test does
+                result = await client.call_tool(name, arguments, raise_on_error=False)
+                text = " ".join(c.text for c in result.content if isinstance(c, TextContent))
+                if not result.is_error or REASON not in text or observation.PORT_CALLS:
+                    found.append(f"{name} {arguments!r}: {text[:150]} {observation.PORT_CALLS}")
+    finally:
+        observation.RECORDING = before
+        observation.PORT_CALLS.clear()
+    return found
+
+
+@pytest.mark.parametrize("stdio", [False, True])
+async def test_every_text_of_every_tool_is_refused_and_nothing_is_sent(
+    tmp_path: Path, *, stdio: bool
+) -> None:
+    assert await unrefused(server(stdio=stdio, root=str(tmp_path))) == []
+
+
+async def test_the_sweep_knows_the_places_the_task_names(tmp_path: Path) -> None:
+    async with Client(server(stdio=True, root=str(tmp_path))) as client:
+        tools = await client.list_tools()
+        writes = {
+            tool.name
+            for tool in tools
+            if not (tool.annotations and tool.annotations.read_only_hint)
+        }
+    swept = calls(surface(tools))
+
+    for wanted in (
+        ("update_document", {"title": BAD}),
+        ("update_documents", {"documents": [{"title": BAD}]}),
+        ("create_taxonomy_item", {"name": BAD}),
+        ("create_taxonomy_item", {"select_options": [BAD]}),
+        ("add_note", {"note": BAD}),
+        ("upload_document", {"custom_fields": {"key": BAD}}),
+        ("upload_document", {"custom_fields": {BAD: 1}}),
+        ("upload_documents", {"paths": [BAD]}),
+    ):
+        assert wanted in swept, [a for n, a in swept if n == wanted[0]]
+    # The write tools that are not in the sweep hold no text anywhere, however deep.
+    without = writes - {name for name, _ in swept}
+    assert "rotate_documents" in without
+    assert [t.name for t in tools if t.name in without and free_text(t.input_schema)] == []
+
+
+def free_text(schema: object) -> bool:
+    """Whether a string that is no choice is anywhere in ``schema``; looks at everything in it."""
+    if isinstance(schema, dict):
+        part = cast("Json", schema)
+        if part.get("type") == "string" and not {"enum", "const"} & set(part):
+            return True
+        return any(free_text(inner) for inner in part.values())
+    return isinstance(schema, list) and any(map(free_text, cast("list[object]", schema)))
+
+
+async def test_a_new_tool_that_does_not_refuse_is_found() -> None:
+    """The sweep is no check of a list: a server without the refusal fails it."""
+    offered = FastMCP("without")
+
+    @offered.tool
+    async def plain(name: str) -> str:
+        return name.encode("ascii", "replace").decode()
+
+    @offered.tool
+    async def nested(rows: list[dict[str, list[str]]], other: int = 0) -> int:
+        return len(rows) + other
+
+    found = await unrefused(offered)
+
+    assert [line.split(":")[0] for line in found] == ["plain {'name'", "nested {'rows'"]
+
+
+async def test_the_refusal_names_the_place_and_repeats_nothing_of_the_text() -> None:
+    async with Client(server()) as client:
+        for arguments, where in (
+            ({"title": "secret \udfff"}, "title"),
+            ({"title": "fine", "custom_fields": {"Amount": ["x", BAD]}}, "custom_fields.Amount.1"),
+            ({REFUSED_TEXT: "title"}, "title"),
+        ):
+            result = await client.call_tool("update_document", arguments, raise_on_error=False)
+            text = cast("TextContent", result.content[0]).text
+            assert text == (
+                f"The {where} is not valid text. Hint: Give the {where} in plain characters: "
+                "it holds half of a character (a lone surrogate)."
+            )
+
+
+async def test_whole_characters_outside_the_basic_plane_are_text() -> None:
+    async with Client(server()) as client:
+        _ = await client.call_tool("add_note", {"document_id": 1, "note": "\U0001f9fe � \0x"[:5]})
+
+
+# --- the wire of HTTP -------------------------------------------------------------------------
+
+
+async def test_a_call_over_http_is_refused_by_the_tool_or_by_the_parser() -> None:
+    fake = FakePaperless(seeded(), user="admin", allow_writes=True)
+    notes = len(fake.state.documents[0].notes)
+    call: Json = {"name": "add_note", "arguments": {"document_id": 1, "note": BAD}}
+    async with httpx2.AsyncClient(timeout=30) as http:
+        with running(app(fake)) as url:
+            session = await Handshake.open(http, url)
+            answers: list[str] = []
+            for headers, params in (
+                (session.headers(ANNA, session.session), call),
+                (
+                    {
+                        **session.headers(ANNA),
+                        "MCP-Protocol-Version": SESSIONLESS,
+                        "Mcp-Method": "tools/call",
+                        "Mcp-Name": "add_note",
+                    },
+                    {
+                        **call,
+                        "_meta": {
+                            f"{META}protocolVersion": SESSIONLESS,
+                            f"{META}clientInfo": {"name": "t", "version": "1"},
+                            f"{META}clientCapabilities": {},
+                        },
+                    },
+                ),
+            ):
+                body = {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": params}
+                # Not json=: it would not escape the text.
+                response = await http.post(
+                    url,
+                    headers={**headers, "Content-Type": "application/json"},
+                    content=json.dumps(body),
+                )
+                answers.append(response.text)
+
+    assert "Parse error" in answers[0]
+    assert "surrogate" in answers[0] or "hex escape" in answers[0]
+    assert REASON in answers[1]
+    assert len(fake.state.documents[0].notes) == notes
+
+
+# --- the wire of a real stdio server --------------------------------------------------------------
+
+STDIO = """
+import sys
+sys.path[:0] = [{tests!r}]
+import observation
+observation.RECORDING = True
+from fakes.paperless import FakePaperless, seeded
+from harness import serve
+from mcp_server_paperless.cli import run_stdio
+run_stdio(
+    serve(
+        FakePaperless(seeded(), user="admin", allow_writes=True),
+        toolsets=["all"],
+        stdio=True,
+        upload_dirs=[{root!r}],
+        download_dirs=[{root!r}],
+    )
+)
+print("CALLS", *{{call.tool for call in observation.PORT_CALLS if call.tool}}, file=sys.stderr)
+"""
+START: Json = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {},
+        "clientInfo": {"name": "x", "version": "1"},
+    },
+}
+
+
+class Wire:
+    """A stdio server and the lines written to it."""
+
+    def __init__(self, process: subprocess.Popen[bytes]) -> None:
+        self.process: subprocess.Popen[bytes] = process
+        self.seen: set[object] = set()
+
+    def send(self, line: bytes) -> None:
+        assert self.process.stdin
+        _ = self.process.stdin.write(line + b"\n")
+        self.process.stdin.flush()
+
+    def ask(self, message: Json) -> Json:
+        self.send(json.dumps(message).encode())
+        assert self.process.stdout
+        for line in cast("Iterable[bytes]", self.process.stdout):
+            answer = cast("Json", json.loads(line))
+            self.seen.add(answer.get("id"))
+            if answer.get("id") == message["id"]:
+                return answer
+        pytest.fail(f"no answer to {message}")
+
+    def request(self, method: str, params: Json, number: object = "x") -> Json:
+        return self.ask({"jsonrpc": "2.0", "id": number, "method": method, "params": params})
+
+    def call(self, number: object, name: str, arguments: Json, **more: object) -> Json:
+        return self.request("tools/call", {"name": name, "arguments": arguments, **more}, number)
+
+
+@contextlib.contextmanager
+def stdio_server(tmp_path: Path) -> Generator[Wire]:
+    """A started stdio server; it ends with its input, and logs the tools that asked Paperless."""
+    code = STDIO.format(tests=str(Path(__file__).parents[1]), root=str(tmp_path))
+    with (
+        (tmp_path / "log").open("w") as stderr,
+        subprocess.Popen(  # noqa: S603 -- this interpreter and a script of this file
+            [sys.executable, "-c", code],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=stderr,
+        ) as process,
+    ):
+        # Without an answer there is nothing to read: the end of the process ends the wait.
+        limit = threading.Timer(90, process.kill)
+        limit.start()
+        try:
+            wire = Wire(process)
+            _ = wire.ask(START)
+            wire.send(b'{"jsonrpc": "2.0", "method": "notifications/initialized"}')
+            yield wire
+            assert process.stdin
+            process.stdin.close()
+            _ = process.wait(20)
+        finally:
+            limit.cancel()
+            process.kill()
+
+
+def asked(tmp_path: Path) -> list[str]:
+    log = (tmp_path / "log").read_text(encoding="utf-8")
+    return [line for line in log.splitlines() if "CALLS" in line]
+
+
+def note_of(answer: Json) -> Json:
+    return cast("Json", cast("Json", cast("Json", answer["result"])["structuredContent"])["note"])
+
+
+@pytest.mark.decision("decision-110")
+def test_every_text_is_refused_on_the_wire_of_stdio_too(tmp_path: Path) -> None:
+    """JSON.stringify sends a lone surrogate as an escape, which the SDK drops without an answer."""
+    with stdio_server(tmp_path) as wire:
+        listed = cast("Json", wire.request("tools/list", {})["result"])
+        tools = [
+            (str(t["name"]), cast("Json", t["inputSchema"]))
+            for t in cast("list[Json]", listed["tools"])
+        ]
+        swept = calls(tools)
+        for number, (name, arguments) in enumerate(swept, 10):
+            result = cast("Json", wire.call(number, name, arguments)["result"])
+            assert result["isError"], (name, arguments)
+            assert REASON in str(result["content"]), (name, arguments, result)
+        fine = wire.call("fine", "add_note", {"document_id": 1, "note": "\U0001f9fe \\ud800"})
+
+    assert len(swept) > 300
+    assert note_of(fine)["note"] == "\U0001f9fe \\ud800"
+    assert asked(tmp_path) == ["CALLS add_note"]
+
+
+@pytest.mark.decision("decision-110")
+def test_what_the_sdk_rejects_is_refused_or_dropped_over_stdio_and_never_run(
+    tmp_path: Path,
+) -> None:
+    arguments: Json = {"document_id": 1, "note": "run"}
+    params: Json = {"name": "add_note", "arguments": arguments}
+    note = json.dumps({"jsonrpc": "2.0", "id": "broken", "method": "tools/call", "params": params})
+    with stdio_server(tmp_path) as wire:
+        # The surrogate is in no argument: the call would run without it.
+        unknown = wire.call("unknown", BAD, {}, _meta={"x": BAD})
+        meta = wire.call("meta", "add_note", arguments, _meta={"x": BAD})
+        prompt = wire.request("prompts/get", {"name": "x", "arguments": {"a": BAD}})
+        # The parser refuses these for another reason, so they have no answer.
+        for broken in ("\\ud8zz", '\\ud8\\"x\\"', "\\ud800\x01", "\\ud800\n", "\\ud800\r"):
+            wire.send(note.replace("run", "run" + broken).encode())
+        # A byte that is no UTF-8 is none of the reasons.
+        data = note.replace("broken", "bytes").encode().replace(b"run", b"run\\ud800\xff")
+        wire.send(data)
+        fine = wire.call("fine", "add_note", {"document_id": 1, "note": "the only one"})
+
+    assert "The name is not valid text." in str(unknown)
+    assert "The _meta.x is not valid text." in str(meta)
+    assert "lone surrogate" in str(prompt["error"])
+    assert "broken" not in wire.seen
+    assert "bytes" in wire.seen
+    assert note_of(fine)["id"] == 2  # the first is of the seed
+    assert asked(tmp_path) == ["CALLS add_note"]
+
+
+HOLD = """
+import sys
+from fastmcp import Context, FastMCP
+from mcp_server_paperless.cli import run_stdio
+server = FastMCP("holding")
+
+@server.tool
+async def hold(ctx: Context) -> str:
+    answer = await ctx.elicit("go on?", bool)
+    return answer.action
+
+run_stdio(server)
+"""
+
+
+@pytest.mark.decision("decision-110")
+def test_what_the_sdk_rejects_resolves_no_question_over_stdio() -> None:
+    """With an error beside the method, the refused line was the answer to a pending question."""
+    start = cast("Json", START["params"])
+    hello: Json = {**START, "params": {**start, "capabilities": {"elicitation": {}}}}
+    with subprocess.Popen(  # noqa: S603 -- this interpreter and a script of this file
+        [sys.executable, "-c", HOLD],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    ) as process:
+        limit = threading.Timer(60, process.kill)
+        limit.start()
+        try:
+            wire = Wire(process)
+            _ = wire.ask(hello)
+            wire.send(b'{"jsonrpc": "2.0", "method": "notifications/initialized"}')
+            call: Json = {"jsonrpc": "2.0", "id": "held", "method": "tools/call"}
+            wire.send(json.dumps({**call, "params": {"name": "hold", "arguments": {}}}).encode())
+            assert process.stdout
+            question: Json = {}
+            while question.get("method") != "elicitation/create":
+                question = cast("Json", json.loads(cast("bytes", process.stdout.readline())))
+            hybrid: Json = {"jsonrpc": "2.0", "id": question["id"], "x": BAD}
+            for more in (
+                {"method": "x", "params": {}, "error": {"code": 1, "message": "boo"}},
+                {"method": "x", "params": {}, "result": {"action": "cancel"}},
+            ):
+                wire.send(json.dumps({**hybrid, **more}).encode())
+            answer: Json = {"jsonrpc": "2.0", "id": question["id"]}
+            wire.send(json.dumps({**answer, "result": {"action": "decline"}}).encode())
+            told: Json = {}
+            while told.get("id") != "held":
+                told = cast("Json", json.loads(cast("bytes", process.stdout.readline())))
+            assert process.stdin
+            process.stdin.close()
+        finally:
+            limit.cancel()
+            process.kill()
+
+    assert "decline" in str(told["result"])
